@@ -1,8 +1,12 @@
-version: "3.8"
-
 services:
   yunqi-pavilion:
     image: yunqi-pavilion:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        GOPROXY: https://goproxy.cn,direct
+        NPM_REGISTRY: https://registry.npmmirror.com
     container_name: yunqi-pavilion
     restart: unless-stopped
     ports:

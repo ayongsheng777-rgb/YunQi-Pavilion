@@ -1,5 +1,6 @@
 # Stage 1: Build Frontend
-FROM node:20.19-bookworm-slim AS frontend-builder
+# 注：用 node:20-bookworm（NAS 本地已缓存，避免从 Docker Hub 拉取超时）
+FROM node:20-bookworm AS frontend-builder
 
 # 1. 接收构建参数（代理地址 + 镜像源）
 ARG HTTP_PROXY
@@ -31,7 +32,9 @@ ENV VITE_DOCKER_BUILD=1
 RUN npm run build-only
 
 # Stage 2: Build Backend
-FROM --platform=$BUILDPLATFORM golang:alpine AS backend-builder
+# 注：用 golang:1.23-bookworm（NAS 本地已缓存）；go.mod 要求 go1.25.5 时
+# Go 工具链会自动经 GOPROXY 下载对应版本（已配 goproxy.cn）
+FROM --platform=$BUILDPLATFORM golang:1.23-bookworm AS backend-builder
 
 # 接收构建参数
 ARG HTTP_PROXY
@@ -40,7 +43,8 @@ ARG GOPROXY=https://proxy.golang.org,direct
 
 ENV HTTP_PROXY=$HTTP_PROXY \
     HTTPS_PROXY=$HTTPS_PROXY \
-    GOPROXY=$GOPROXY
+    GOPROXY=$GOPROXY \
+    GOTOOLCHAIN=auto
 
 WORKDIR /app/backend
 
