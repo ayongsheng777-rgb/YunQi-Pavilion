@@ -1018,14 +1018,14 @@ func SaveData(c *gin.Context) {
 	// Single-user mode always persists as admin to avoid stale imported usernames leaking back.
 	if username == "admin" && sysConfig.AuthMode == "single" {
 		payload["username"] = "admin"
+	} else if _, ok := payload["username"]; !ok {
+		// Ensure username is set
+		payload["username"] = username
 	}
 
 	// 云栖阁：浏览器助手插件经 /api/save 整包保存，绕过 OpenAPI 的去重检查。
 	// 在这里统一处理书签小组件：缺 isPublic 的子书签默认不公开，子书签按网址去重。
-	normalizeBookmarkWidgets(payload) else if _, ok := payload["username"]; !ok {
-		// Ensure username is set
-		payload["username"] = username
-	}
+	normalizeBookmarkWidgets(payload)
 	normalizeEmbeddedAssetRefs(payload)
 
 	if err := utils.WriteJSON(userFile, payload); err != nil {
