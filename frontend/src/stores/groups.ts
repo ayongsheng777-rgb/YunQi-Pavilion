@@ -51,7 +51,7 @@ export const useGroupsStore = defineStore("groups", () => {
   const addItem = (item: NavItem, groupId: string) => {
     const group = groups.value.find((g) => g.id === groupId);
     if (group) {
-      group.items.push({ ...item, isPublic: item.isPublic ?? true });
+      group.items.push({ ...item, isPublic: item.isPublic ?? false });
     }
   };
 

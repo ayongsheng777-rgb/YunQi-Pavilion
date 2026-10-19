@@ -99,6 +99,40 @@ func UserDataFile(username string) string {
 }
 
 // ---------------------------------------------------------------------------
+// 网址去重：规范化后比较，插件/接口重复收藏同一网址时直接提示已存在。
+// ---------------------------------------------------------------------------
+
+// normalizeBookmarkURL 规范化网址用于去重比较：去首尾空格、小写、
+// 去协议头、去末尾斜杠。
+func normalizeBookmarkURL(u string) string {
+	u = strings.TrimSpace(strings.ToLower(u))
+	for _, p := range []string{"https://", "http://"} {
+		if strings.HasPrefix(u, p) {
+			u = strings.TrimPrefix(u, p)
+			break
+		}
+	}
+	return strings.TrimSuffix(u, "/")
+}
+
+// findDuplicateBookmark 在所有分组中查找网址已存在的书签，
+// 返回分组标题和书签（没找到返回空字符串和 nil）。
+func findDuplicateBookmark(groups []models.Group, url string) (string, *models.Item) {
+	target := normalizeBookmarkURL(url)
+	if target == "" {
+		return "", nil
+	}
+	for gi := range groups {
+		for ii := range groups[gi].Items {
+			if normalizeBookmarkURL(groups[gi].Items[ii].Url) == target {
+				return groups[gi].Title, &groups[gi].Items[ii]
+			}
+		}
+	}
+	return "", nil
+}
+
+// ---------------------------------------------------------------------------
 // 书签（Group/Item）读写：用 map 读回写，避免 models.User 丢掉 version/username
 // 等 data.json 顶层字段；写完按 data.go 的缓存失效方式处理
 // （data.go 的 getDataCache 以文件 modtime 校验，utils.WriteJSON 原子写会更新

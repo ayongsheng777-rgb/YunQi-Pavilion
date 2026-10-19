@@ -439,6 +439,10 @@ func mcpCreateBookmark(user string, args map[string]interface{}) (string, bool) 
 	if err != nil {
 		return "读取书签失败", true
 	}
+	// 去重：网址已存在则直接提示
+	if dupGroup, dup := findDuplicateBookmark(groups, url); dup != nil {
+		return "该网址已收藏过（分类：" + dupGroup + "，标题：" + dup.Title + "），未重复创建", true
+	}
 	gi := -1
 	if categoryID != "" {
 		gi = findGroupByID(groups, categoryID)

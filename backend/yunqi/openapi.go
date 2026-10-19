@@ -134,6 +134,21 @@ func OpenAPICreateBookmark(c *gin.Context) {
 		return
 	}
 
+	// 去重：网址已存在则直接提示，不重复创建
+	userFile := UserDataFile("admin")
+	if groups, err := loadBookmarkGroups(userFile); err == nil {
+		if dupGroup, dup := findDuplicateBookmark(groups, req.URL); dup != nil {
+			c.JSON(http.StatusConflict, gin.H{
+				"error":    "该网址已收藏过",
+				"duplicate": true,
+				"category": dupGroup,
+				"title":    dup.Title,
+				"id":       dup.ID,
+			})
+			return
+		}
+	}
+
 	id, err := addBookmarkToCategory("admin", req.Category, req.Title, req.URL, req.Description)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存失败，请稍后再试"})
