@@ -4061,9 +4061,8 @@ watch(activeTab, (val) => {
                     打开握手页
                   </button>
                   <a
-                    href="https://github.com/ayongsheng777-rgb/YunQi-Pavilion"
-                    target="_blank"
-                    rel="noopener noreferrer"
+                    href="/flatnas-helper.zip"
+                    download="flatnas-helper.zip"
                     class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-lg transition-colors inline-block"
                   >
                     下载浏览器助手
