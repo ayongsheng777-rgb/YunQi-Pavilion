@@ -98,6 +98,16 @@ func Login(c *gin.Context) {
 	}
 
 	if match {
+		// 云栖阁：可信设备（yq_device cookie 有效）直接登录，跳过 OTP 二次验证。
+		if deviceUser, ok := yunqi.CheckDeviceCookie(c); ok && deviceUser == req.Username {
+			tokenString, err := yunqi.IssueUserToken(req.Username)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "签发登录凭证失败"})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"success": true, "token": tokenString, "username": req.Username})
+			return
+		}
 		// 云栖阁：该用户开启了 OTP 双因素验证时，不直接发登录 JWT，
 		// 而是返回临时 token，前端拿它调 /api/login/otp 做二次验证。
 		if yunqi.OTPEnabled(req.Username) {
