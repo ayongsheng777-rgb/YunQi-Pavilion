@@ -1018,7 +1018,11 @@ func SaveData(c *gin.Context) {
 	// Single-user mode always persists as admin to avoid stale imported usernames leaking back.
 	if username == "admin" && sysConfig.AuthMode == "single" {
 		payload["username"] = "admin"
-	} else if _, ok := payload["username"]; !ok {
+	}
+
+	// 云栖阁：浏览器助手插件经 /api/save 整包保存，绕过 OpenAPI 的去重检查。
+	// 在这里统一处理书签小组件：缺 isPublic 的子书签默认不公开，子书签按网址去重。
+	normalizeBookmarkWidgets(payload) else if _, ok := payload["username"]; !ok {
 		// Ensure username is set
 		payload["username"] = username
 	}
@@ -1360,4 +1364,69 @@ func extractWeatherPayloads(payload map[string]interface{}) []WeatherPayload {
 		})
 	}
 	return payloads
+}
+
+// ---------------------------------------------------------------------------
+// 云栖阁：浏览器助手插件经 /api/save 整包保存书签（塞进 type=bookmarks 的小组件
+// 的 data[].children[] 里），不走 OpenAPI 的去重逻辑，且子书签不带 isPublic。
+// 保存前统一处理：缺 isPublic 的默认 false（不公开），同小组件内按网址去重。
+// ---------------------------------------------------------------------------
+
+func normalizeWidgetURL(u string) string {
+	s := strings.TrimSpace(strings.ToLower(u))
+	for _, p := range []string{"https://", "http://"} {
+		if strings.HasPrefix(s, p) {
+			s = strings.TrimPrefix(s, p)
+			break
+		}
+	}
+	return strings.TrimSuffix(s, "/")
+}
+
+func normalizeBookmarkWidgets(payload map[string]interface{}) {
+	widgets, ok := payload["widgets"].([]interface{})
+	if !ok {
+		return
+	}
+	for _, w := range widgets {
+		wm, ok := w.(map[string]interface{})
+		if !ok || wm["type"] != "bookmarks" {
+			continue
+		}
+		data, ok := wm["data"].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, f := range data {
+			fm, ok := f.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			children, ok := fm["children"].([]interface{})
+			if !ok {
+				continue
+			}
+			seen := map[string]bool{}
+			kept := make([]interface{}, 0, len(children))
+			for _, ch := range children {
+				cm, ok := ch.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				// 缺 isPublic 默认不公开
+				if _, exists := cm["isPublic"]; !exists {
+					cm["isPublic"] = false
+				}
+				// 按网址去重（保留第一次出现的）
+				url, _ := cm["url"].(string)
+				key := normalizeWidgetURL(url)
+				if key == "" || seen[key] {
+					continue
+				}
+				seen[key] = true
+				kept = append(kept, cm)
+			}
+			fm["children"] = kept
+		}
+	}
 }
