@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body { width: 340px; margin: 0; padding: 14px; font-size: 13px; color: #333;
+         font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 15px; margin: 0 0 10px; color: #8c6a1f; }
+  label { display: block; margin: 8px 0 4px; color: #666; }
+  input, textarea, select { width: 100%; padding: 7px 8px; border: 1px solid #d9c98a;
+      border-radius: 6px; font-size: 13px; }
+  textarea { height: 52px; resize: vertical; }
+  .row { display: flex; gap: 8px; }
+  .row select { flex: 1; }
+  #newCatWrap { display: none; margin-top: 6px; }
+  button { width: 100%; margin-top: 12px; padding: 9px; border: none; border-radius: 8px;
+      background: #c9a227; color: #fff; font-size: 14px; cursor: pointer; }
+  button:hover { background: #b08d1e; }
+  button:disabled { background: #ccc; cursor: default; }
+  #msg { margin-top: 10px; padding: 8px 10px; border-radius: 6px; display: none; font-size: 12px; }
+  #msg.ok { display: block; background: #e6f7ec; color: #1a9e54; }
+  #msg.err { display: block; background: #fdecea; color: #c0392b; }
+  #needConfig { display: none; background: #fff8e6; border: 1px solid #e8c96a;
+      border-radius: 8px; padding: 10px; margin-bottom: 8px; font-size: 12px; color: #7a5c00; }
+  #needConfig button { margin-top: 8px; }
+  .foot { margin-top: 10px; text-align: right; }
+  .foot a { font-size: 12px; color: #8c6a1f; cursor: pointer; }
+</style>
+</head>
+<body>
+  <h1>☁ 收藏到云栖阁</h1>
+
+  <div id="needConfig">
+    还没配置云栖阁服务器。<br>
+    点下面按钮，填好「服务器地址」和「Token」就能用。<br>
+    <button id="goOptions" type="button">去填写配置</button>
+  </div>
+
+  <div id="form">
+    <label>标题</label>
+    <input id="title" type="text" placeholder="网页标题">
+    <label>网址</label>
+    <input id="url" type="text" placeholder="https://...">
+    <label>备注（可不填）</label>
+    <textarea id="desc" placeholder="给这个收藏写句话备注"></textarea>
+    <label>分类</label>
+    <div class="row">
+      <select id="category"></select>
+    </div>
+    <div id="newCatWrap">
+      <input id="newCat" type="text" placeholder="输入新分类名，云栖阁会自动创建">
+    </div>
+    <button id="save" type="button">收 藏</button>
+    <div id="msg"></div>
+    <div class="foot"><a id="openOptions">⚙ 选项设置</a></div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

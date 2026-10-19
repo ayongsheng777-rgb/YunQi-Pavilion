@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>云栖阁收藏 - 选项设置</title>
+<style>
+  * { box-sizing: border-box; }
+  body { max-width: 520px; margin: 40px auto; padding: 0 20px; font-size: 14px; color: #333;
+         font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  h1 { font-size: 18px; color: #8c6a1f; }
+  .tip { background: #fff8e6; border: 1px solid #e8c96a; border-radius: 8px;
+         padding: 10px 12px; font-size: 13px; color: #7a5c00; margin: 12px 0; }
+  label { display: block; margin: 14px 0 6px; font-weight: bold; }
+  input { width: 100%; padding: 9px 10px; border: 1px solid #d9c98a; border-radius: 6px; font-size: 14px; }
+  button { margin-top: 16px; padding: 10px 26px; border: none; border-radius: 8px;
+      background: #c9a227; color: #fff; font-size: 14px; cursor: pointer; }
+  button:hover { background: #b08d1e; }
+  #msg { margin-top: 12px; font-size: 13px; display: none; }
+  #msg.ok { display: block; color: #1a9e54; }
+  #msg.err { display: block; color: #c0392b; }
+</style>
+</head>
+<body>
+  <h1>☁ 云栖阁收藏 - 选项设置</h1>
+
+  <div class="tip">
+    服务器地址填你云栖阁的访问地址，例如 <b>http://192.168.57.228:23000</b>（家里 NAS），<br>
+    后面不要加斜杠。<br><br>
+    Token 在云栖阁网页里查看：<b>设置 → 插件与 AI 助手的钥匙</b>，点"复制"粘贴到下面。<br>
+    Token 是钥匙，不要发给别人。
+  </div>
+
+  <label>服务器地址</label>
+  <input id="serverUrl" type="text" placeholder="http://192.168.57.228:23000">
+
+  <label>Token（钥匙）</label>
+  <input id="token" type="password" placeholder="粘贴从云栖阁复制的 Token">
+
+  <button id="save" type="button">保 存</button>
+  <button id="test" type="button" style="background:#7a8a99;margin-left:8px;">测试连接</button>
+  <div id="msg"></div>
+
+  <script src="config.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>
