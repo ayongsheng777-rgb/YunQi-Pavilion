@@ -1024,8 +1024,10 @@ func SaveData(c *gin.Context) {
 	}
 
 	// 云栖阁：浏览器助手插件经 /api/save 整包保存，绕过 OpenAPI 的去重检查。
-	// 在这里统一处理书签小组件：缺 isPublic 的子书签默认不公开，子书签按网址去重。
+	// 在这里统一处理书签：小组件子书签缺 isPublic 的默认不公开；分组书签去重，
+	// 插件新增的公开网址改不公开。
 	normalizeBookmarkWidgets(payload)
+	normalizeBookmarkGroups(payload, existingData)
 	normalizeEmbeddedAssetRefs(payload)
 
 	if err := utils.WriteJSON(userFile, payload); err != nil {
@@ -1368,8 +1370,11 @@ func extractWeatherPayloads(payload map[string]interface{}) []WeatherPayload {
 
 // ---------------------------------------------------------------------------
 // 云栖阁：浏览器助手插件经 /api/save 整包保存书签（塞进 type=bookmarks 的小组件
-// 的 data[].children[] 里），不走 OpenAPI 的去重逻辑，且子书签不带 isPublic。
-// 保存前统一处理：缺 isPublic 的默认 false（不公开），同小组件内按网址去重。
+// 的 data[].children[] 里，或直接塞进 groups[].items[] 里且硬编码 isPublic:true），
+// 不走 OpenAPI 的去重逻辑。保存前统一处理：
+//  1. 小组件子书签：缺 isPublic 的默认 false（不公开），同小组件内按网址去重。
+//  2. 分组书签：按网址去重；新网址（现有数据里没有）若 isPublic 为 true 则改为
+//     false（插件硬编码的公开，前端新建默认是 false，所以新出现的 true 只可能来自插件）。
 // ---------------------------------------------------------------------------
 
 func normalizeWidgetURL(u string) string {
@@ -1428,5 +1433,72 @@ func normalizeBookmarkWidgets(payload map[string]interface{}) {
 			}
 			fm["children"] = kept
 		}
+	}
+}
+
+// normalizeBookmarkGroups 处理分组书签：去重 + 插件新增的公开网址改不公开。
+// existingData 为保存前的数据，用于判断哪些网址是本次新增的。
+func normalizeBookmarkGroups(payload, existingData map[string]interface{}) {
+	// 收集已存在的网址
+	existingURLs := map[string]bool{}
+	if groups, ok := existingData["groups"].([]interface{}); ok {
+		for _, g := range groups {
+			gm, ok := g.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			items, ok := gm["items"].([]interface{})
+			if !ok {
+				continue
+			}
+			for _, it := range items {
+				im, ok := it.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				if url, ok := im["url"].(string); ok {
+					if key := normalizeWidgetURL(url); key != "" {
+						existingURLs[key] = true
+					}
+				}
+			}
+		}
+	}
+
+	groups, ok := payload["groups"].([]interface{})
+	if !ok {
+		return
+	}
+	seen := map[string]bool{} // 本次保存内的去重（跨分组）
+	for _, g := range groups {
+		gm, ok := g.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		items, ok := gm["items"].([]interface{})
+		if !ok {
+			continue
+		}
+		kept := make([]interface{}, 0, len(items))
+		for _, it := range items {
+			im, ok := it.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			url, _ := im["url"].(string)
+			key := normalizeWidgetURL(url)
+			if key == "" || seen[key] {
+				continue // 空网址或重复，丢弃
+			}
+			seen[key] = true
+			// 本次新增且被标为公开的，一律改不公开（插件硬编码 isPublic:true）
+			if !existingURLs[key] {
+				if pub, ok := im["isPublic"].(bool); ok && pub {
+					im["isPublic"] = false
+				}
+			}
+			kept = append(kept, im)
+		}
+		gm["items"] = kept
 	}
 }
