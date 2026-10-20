@@ -367,6 +367,18 @@ func buildGeocodingCandidates(city string) []string {
 			candidates = append(candidates, trimmed)
 		}
 	}
+	// Open-Meteo 的地名库里多数地级市登记的是带「市」的名字（如「荆州市」），
+	// 用户只填「荆州」时查不到——补一个带「市」的候选（排在后面，精确命中优先）。
+	hasSuffix := false
+	for _, suffix := range suffixes {
+		if strings.HasSuffix(raw, suffix) {
+			hasSuffix = true
+			break
+		}
+	}
+	if !hasSuffix {
+		candidates = append(candidates, raw+"市")
+	}
 	seen := make(map[string]struct{}, len(candidates))
 	unique := make([]string, 0, len(candidates))
 	for _, candidate := range candidates {

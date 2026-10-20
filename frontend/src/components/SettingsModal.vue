@@ -3134,12 +3134,20 @@ watch(activeTab, (val) => {
                               </button>
                             </div>
                           </div>
-                          <button
-                            @click.stop="editingOpacityId = null"
-                            class="mt-2 text-xs text-gray-600 hover:text-gray-900 w-full text-center border-t border-gray-100 pt-1"
-                          >
-                            {{ $t('settings.sections.done') }}
-                          </button>
+                          <div class="flex items-center gap-2 mt-2 border-t border-gray-100 pt-1">
+                            <button
+                              @click.stop="removeWidget(w.id)"
+                              class="flex-1 text-xs text-red-500 hover:text-red-700 text-center py-0.5"
+                            >
+                              删除组件
+                            </button>
+                            <button
+                              @click.stop="editingOpacityId = null"
+                              class="flex-1 text-xs text-gray-600 hover:text-gray-900 text-center py-0.5"
+                            >
+                              {{ $t('settings.sections.done') }}
+                            </button>
+                          </div>
                         </div>
                       </template>
                       <template v-else>
