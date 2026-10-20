@@ -1,0 +1,10 @@
+{
+  "name": "yunqi-music-engine",
+  "version": "1.0.0",
+  "description": "云栖阁音乐引擎：lx-music-desktop 的搜歌/歌词/榜单能力 + 音源脚本沙盒，HTTP 服务",
+  "type": "module",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "license": "AGPL-3.0-only",
+  "dependencies": { "needle": "^3.3.1" }
+}
