@@ -225,6 +225,41 @@ export class UserApiInstance {
   }
 }
 
+// 地址验真：有些音源脚本会返回已失效的播放地址（404 等），拿到后先探活，
+// 活不了就换下一个脚本试。403/405/501 属"探不准"，放行（宁可给用户一个可能能播的地址）。
+const validatePlayUrl = (url) =>
+  new Promise((resolve) => {
+    if (!url || typeof url !== 'string') return resolve(false)
+    let done = false
+    let stream = null
+    const finish = (ok) => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      try { stream?.destroy() } catch {}
+      resolve(ok)
+    }
+    const timer = setTimeout(() => finish(false), 15000)
+    try {
+      stream = needle.get(url, {
+        proxy: proxyUrl(),
+        open_timeout: 8000,
+        response_timeout: 12000,
+        follow_max: 5,
+        headers: {
+          Range: 'bytes=0-1023',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        },
+      })
+    } catch {
+      return finish(false)
+    }
+    stream.on('header', (status) => {
+      finish(status === 403 || status === 405 || status === 501 || (status >= 200 && status < 400))
+    })
+    stream.on('error', () => finish(false))
+  })
+
 // ---- 音源脚本管理：存 data/sources 目录 ----
 export class SourceManager {
   constructor(dir) {
@@ -271,7 +306,7 @@ export class SourceManager {
 
   current() { return this.instances[0] || null }
 
-  // 多音源自动切换：按顺序尝试所有已加载脚本，成功一个即返回
+  // 多音源自动切换：按顺序尝试所有已加载脚本，地址还要验真，能打开才算数
   async getMusicUrl(source, musicInfo, quality) {
     if (!this.instances.length) throw new Error('还没有导入音源脚本，无法获取播放地址')
     let lastErr = null
@@ -279,7 +314,10 @@ export class SourceManager {
       const s = inst.sources[source]
       if (!s || !s.actions.includes('musicUrl')) continue
       try {
-        return await inst.getMusicUrl(source, musicInfo, quality)
+        const r = await inst.getMusicUrl(source, musicInfo, quality)
+        const url = typeof r === 'string' ? r : r?.url
+        if (url && (await validatePlayUrl(url))) return r
+        lastErr = new Error(`音源「${inst.meta?.name || '未知'}」给的播放地址打不开`)
       } catch (e) {
         lastErr = e
       }

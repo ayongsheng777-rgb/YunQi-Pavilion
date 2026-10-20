@@ -329,7 +329,15 @@ func runDownload(cfg MusicConfig, task *DownloadTask, source string, musicInfo m
 	task.File = fileName
 	downloadMu.Unlock()
 
-	dlResp, err := http.Get(engineResp.Data.URL)
+	// 下载走配置的代理（音源地址多半要走代理才通；和引擎验真用的是同一条路）
+	dlClient := &http.Client{}
+	if cfg.ProxyEnabled && cfg.ProxyHost != "" {
+		proxyURL, perr := url.Parse(fmt.Sprintf("http://%s:%d", cfg.ProxyHost, cfg.ProxyPort))
+		if perr == nil {
+			dlClient.Transport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+		}
+	}
+	dlResp, err := dlClient.Get(engineResp.Data.URL)
 	if err != nil {
 		fail("下载失败")
 		return
