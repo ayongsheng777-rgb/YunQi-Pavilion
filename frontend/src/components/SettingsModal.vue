@@ -899,6 +899,32 @@ const maskedToken = computed(() =>
 const mcpEndpoint = computed(() => `${window.location.origin}/mcp`);
 const openapiBase = computed(() => `${window.location.origin}/openapi/v1`);
 const mcpToolCount = ref(12);
+// AI 智能安装提示词：用户复制后发给自己的 AI 助手，AI 照说明自动完成 MCP 接入
+const mcpInstallPrompt = computed(() => `请帮我把「云栖阁」导航面板的 MCP 服务接入到你的工具列表里，接入后你就能帮我搜索、收藏、管理网址。
+
+接入参数：
+- 服务名称：yunqi-pavilion（云栖阁）
+- 协议：MCP（Model Context Protocol），Streamable HTTP，JSON-RPC 2.0
+- 端点地址：${mcpEndpoint.value}
+- 请求方式：POST，Content-Type: application/json
+- 认证方式：请求头 Authorization: Bearer ${yunqiToken.value || "<在云栖阁设置页复制的钥匙>"}
+（也可以用请求头 token: <钥匙>，二选一即可）
+
+接入步骤：
+1. 在你的 MCP 配置里新增一个远程（HTTP）服务器，名称 yunqi-pavilion，地址填上面的端点，请求头带上 Authorization。
+2. 调用 initialize 方法握手，再调用 tools/list 确认能看到这 12 个工具：search_bookmarks（搜书签）、list_categories（分类列表）、list_bookmarks（分类下的书签）、get_bookmark（书签详情）、create_bookmark（新增书签）、update_bookmark（修改书签）、delete_bookmark（删除书签）、checkin_sites（签到站点）、checkin_today_status（今日签到状态）、checkin_mark_done（标记已签到）、ai_ask（问云栖阁内置 AI）、system_status（系统状态）。
+3. 测试一下：用 search_bookmarks 搜一个常见关键词，确认能返回结果。
+4. 告诉我接入成功，以后我说「收藏这个网址到云栖阁」「云栖阁里有没有某某网站」时，你就用这些工具帮我操作。
+
+注意：这把钥匙能操作我的全部书签，请只配置在我自己的设备上，不要分享给别人。`);
+const copyMcpPrompt = async () => {
+  try {
+    await navigator.clipboard.writeText(mcpInstallPrompt.value);
+    alert("提示词已复制，去发给你的 AI 助手吧");
+  } catch {
+    alert("复制失败，请手动选中复制");
+  }
+};
 
 const loadYunqiToken = async () => {
   tokenLoading.value = true;
@@ -4966,6 +4992,16 @@ document.querySelector('.card-item').addEventListener('click', () => {
                     <label class="text-gray-500 block mb-1">可用工具（{{ mcpToolCount }} 个）</label>
                     <p class="text-gray-600 leading-relaxed">搜索书签 · 分类列表 · 分类书签 · 查书签详情 · 新增/修改/删除书签 · 签到管理 · AI 问答 · 系统状态</p>
                   </div>
+                  <div>
+                    <label class="text-gray-500 block mb-1">🤖 AI 智能安装提示词（复制发给 AI 助手，它会自动帮你配好）</label>
+                    <div class="relative">
+                      <pre class="px-3 py-2 rounded-lg bg-white border border-gray-200 font-mono text-xs whitespace-pre-wrap break-all max-h-40 overflow-y-auto">{{ mcpInstallPrompt }}</pre>
+                      <button
+                        @click="copyMcpPrompt"
+                        class="mt-2 px-3 py-1.5 rounded-lg text-xs font-bold bg-gray-900 text-white hover:bg-gray-700"
+                      >📋 复制提示词</button>
+                    </div>
+                  </div>
                 </div>
                 <button
                   @click="regenerateYunqiToken"
@@ -4976,15 +5012,14 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 </button>
               </div>
 
-              <!-- 云栖阁：浏览器插件 OpenAPI -->
+              <!-- 云栖阁：n8n 工作流接口 -->
               <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 mb-6">
-                <h5 class="text-sm font-bold text-gray-900 mb-2">🧩 浏览器插件接口 <span class="text-xs font-normal text-gray-500">（OpenAPI，插件收藏网址用）</span></h5>
-                <p class="text-xs text-gray-500 mb-3">浏览器助手插件用下面接口把网址收入云栖阁，钥匙与上方 MCP 共用同一把。</p>
+                <h5 class="text-sm font-bold text-gray-900 mb-2">🔄 n8n 工作流接口 <span class="text-xs font-normal text-gray-500">（IT&AI 日报自动推送用）</span></h5>
+                <p class="text-xs text-gray-500 mb-3">n8n 上的「Workflow-02 IT&AI日报」每天 19 点生成日报后，推送到下面接口，云栖阁首页的「IT&AI 日报」小组件会自动更新。钥匙与上方 MCP 共用同一把。</p>
                 <div class="space-y-1 text-xs font-mono">
-                  <div class="px-3 py-1.5 rounded-lg bg-white border border-gray-200 break-all">POST {{ openapiBase }}/bookmark/create <span class="text-gray-400">— 收藏网址</span></div>
-                  <div class="px-3 py-1.5 rounded-lg bg-white border border-gray-200 break-all">GET {{ openapiBase }}/categories <span class="text-gray-400">— 分类列表</span></div>
-                  <div class="px-3 py-1.5 rounded-lg bg-white border border-gray-200 break-all">POST {{ openapiBase }}/itdaily/push <span class="text-gray-400">— 推送 IT 日报（n8n 用）</span></div>
+                  <div class="px-3 py-1.5 rounded-lg bg-white border border-gray-200 break-all">POST {{ openapiBase }}/itdaily/push <span class="text-gray-400">— 推送日报（Body 为日报 JSON，Header 带 Authorization）</span></div>
                 </div>
+                <p class="text-xs text-green-600 mt-2">✅ OECT 的 n8n 工作流已配好推送节点，每天自动同步</p>
               </div>
 
               <!-- 云栖阁：AI 聊天模型设置 -->

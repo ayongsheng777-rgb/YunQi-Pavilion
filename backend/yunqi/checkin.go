@@ -313,3 +313,40 @@ func CheckinStatus(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"date": todayStr(), "status": status})
 }
+
+// GET /api/checkin/search?q=xxx
+// 在已收藏的书签里按标题/网址搜索，供签到站点表单自动匹配填充。
+func CheckinSearchBookmarks(c *gin.Context) {
+	username := c.GetString("username")
+	q := strings.TrimSpace(strings.ToLower(c.Query("q")))
+	if q == "" {
+		c.JSON(http.StatusOK, gin.H{"results": []gin.H{}})
+		return
+	}
+	groups, err := loadBookmarkGroups(UserDataFile(username))
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{"results": []gin.H{}})
+		return
+	}
+	results := []gin.H{}
+	for _, g := range groups {
+		for _, it := range g.Items {
+			if strings.Contains(strings.ToLower(it.Title), q) || strings.Contains(strings.ToLower(it.Url), q) {
+				results = append(results, gin.H{
+					"id":       it.ID,
+					"title":    it.Title,
+					"url":      it.Url,
+					"icon":     it.Icon,
+					"category": g.Title,
+				})
+				if len(results) >= 10 {
+					break
+				}
+			}
+		}
+		if len(results) >= 10 {
+			break
+		}
+	}
+	c.JSON(http.StatusOK, gin.H{"results": results})
+}

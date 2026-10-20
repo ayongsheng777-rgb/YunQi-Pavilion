@@ -80,6 +80,24 @@ export async function fetchCheckinSites(): Promise<CheckinSite[]> {
   return Array.isArray(data?.sites) ? data.sites : [];
 }
 
+/** 在已收藏书签里搜索，供签到站点表单自动匹配 */
+export interface BookmarkMatch {
+  id: string;
+  title: string;
+  url: string;
+  icon?: string;
+  category?: string;
+}
+
+export async function searchCheckinBookmarks(q: string): Promise<BookmarkMatch[]> {
+  const query = (q || "").trim();
+  if (!query) return [];
+  const res = await fetch(`/api/checkin/search?q=${encodeURIComponent(query)}`, { headers: authHeaders() });
+  if (!res.ok) throw new Error(`搜索失败（${res.status}）`);
+  const data = await res.json();
+  return Array.isArray(data?.results) ? data.results : [];
+}
+
 /** 拉取今日签到状态（需要登录） */
 export async function fetchCheckinStatus(): Promise<CheckinStatusItem[]> {
   const res = await fetch("/api/checkin/status", { headers: authHeaders() });

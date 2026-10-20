@@ -11,8 +11,10 @@ import {
   updateCheckinSite,
   deleteCheckinSite,
   openCheckinSite,
+  searchCheckinBookmarks,
   type CheckinSite,
   type CheckinStatusItem,
+  type BookmarkMatch,
 } from "@/utils/checkin";
 
 defineProps<{ widget: WidgetConfig }>();
@@ -73,6 +75,35 @@ const openSite = (site: CheckinSite) => {
 const showManage = ref(false);
 const editing = ref<CheckinSite | null>(null);
 const form = ref({ name: "", url: "", icon: "", note: "", enabled: true });
+
+// --- 书签自动匹配：输入站点名/网址时，检索已收藏书签供一键填充 ---
+const matches = ref<BookmarkMatch[]>([]);
+const showMatches = ref(false);
+let matchTimer: ReturnType<typeof setTimeout> | null = null;
+const onFormInput = () => {
+  if (matchTimer) clearTimeout(matchTimer);
+  const q = (form.value.name || form.value.url || "").trim();
+  if (!q) {
+    matches.value = [];
+    showMatches.value = false;
+    return;
+  }
+  matchTimer = setTimeout(async () => {
+    try {
+      matches.value = await searchCheckinBookmarks(q);
+      showMatches.value = matches.value.length > 0;
+    } catch {
+      matches.value = [];
+      showMatches.value = false;
+    }
+  }, 300);
+};
+const applyMatch = (m: BookmarkMatch) => {
+  form.value.name = m.title;
+  form.value.url = m.url;
+  if (m.icon) form.value.icon = m.icon;
+  showMatches.value = false;
+};
 const saving = ref(false);
 
 const openManage = () => {
@@ -307,17 +338,39 @@ const toggleEnabled = async (site: CheckinSite) => {
       <div class="text-xs font-bold text-white/70 mb-2">
         {{ editing ? t("common.yunqi.checkin.editSite") : t("common.yunqi.checkin.addSite") }}
       </div>
-      <div class="grid grid-cols-1 gap-2">
+      <div class="grid grid-cols-1 gap-2 relative">
         <input
           v-model="form.name"
+          @input="onFormInput"
+          @focus="onFormInput"
           :placeholder="t('common.yunqi.checkin.namePh')"
           class="text-sm px-3 py-2 rounded-lg border bg-white/10 text-white placeholder-white/40 focus:outline-none focus:border-white/40"
         />
         <input
           v-model="form.url"
+          @input="onFormInput"
+          @focus="onFormInput"
           :placeholder="t('common.yunqi.checkin.urlPh')"
           class="text-sm px-3 py-2 rounded-lg border bg-white/10 text-white placeholder-white/40 focus:outline-none focus:border-white/40"
         />
+        <div
+          v-if="showMatches"
+          class="absolute left-0 right-0 top-full mt-1 z-20 rounded-lg bg-gray-900 border border-white/20 shadow-xl overflow-hidden"
+        >
+          <div class="px-3 py-1.5 text-[11px] text-white/50 border-b border-white/10">已收藏的书签（点一下自动填入）</div>
+          <button
+            v-for="m in matches"
+            :key="m.id"
+            @click="applyMatch(m)"
+            class="w-full text-left px-3 py-2 hover:bg-white/10 flex items-center gap-2"
+          >
+            <span class="flex-1 min-w-0">
+              <span class="block text-sm text-white truncate">{{ m.title }}</span>
+              <span class="block text-[11px] text-white/50 truncate">{{ m.url }}</span>
+            </span>
+            <span class="text-[11px] text-white/40 whitespace-nowrap">{{ m.category }}</span>
+          </button>
+        </div>
         <input
           v-model="form.icon"
           :placeholder="t('common.yunqi.checkin.iconPh')"

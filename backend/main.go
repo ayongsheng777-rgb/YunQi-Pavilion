@@ -418,6 +418,7 @@ func main() {
 		checkin.POST("/open", yunqi.CheckinOpen)
 		checkin.GET("/go/:id", yunqi.CheckinGo)
 		checkin.GET("/status", yunqi.CheckinStatus)
+		checkin.GET("/search", yunqi.CheckinSearchBookmarks)
 	}
 
 	// 模块 1b：IT&AI 日报（查询走 JWT，推送走 OpenAPI token 供 n8n 调用）
