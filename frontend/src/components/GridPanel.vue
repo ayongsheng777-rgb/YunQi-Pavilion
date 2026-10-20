@@ -1116,10 +1116,10 @@ const handleSizeSelect = (widget: GridLayoutItem, size: { colSpan: number; rowSp
   const normalize = (value: number) => Math.round(value * 2) / 2;
   let nextW = Math.min(Math.max(normalize(size.colSpan), min), maxCols);
   let nextH = Math.min(Math.max(normalize(size.rowSpan), min), maxRows);
-  // VPS 监控组件最小 4x1（内容需要横向空间；移动端网格只有 2 列则取满宽）
+  // VPS 监控组件最小 4x0.5（0.5 高时组件切微缩模式，一行显示全部信息）
   if ((widget as WidgetConfig).type === "vps-monitor") {
     nextW = Math.max(nextW, Math.min(4, maxCols));
-    nextH = Math.max(nextH, 1);
+    nextH = Math.max(nextH, 0.5);
   }
 
   widget.w = nextW;

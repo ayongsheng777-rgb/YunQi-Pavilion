@@ -69,6 +69,7 @@ type VpsNodeStatus struct {
 	UptimeSec         int64          `json:"uptimeSec"`
 	NetUpRate         float64        `json:"netUpRate"`   // bytes/s
 	NetDownRate       float64        `json:"netDownRate"` // bytes/s
+	PanelURL          string         `json:"panelUrl"`
 	SSHLogAvailable   bool           `json:"sshLogAvailable"`
 	SSHFailed24h      int            `json:"sshFailed24h"`
 	SSHLastIP         string         `json:"sshLastIp"`
@@ -551,7 +552,7 @@ func fetchSSHLog(node VpsNode) (int, string, bool) {
 		if json.Unmarshal(raw, &chk) != nil || chk.Code != 200 || string(chk.Data) != "true" {
 			continue
 		}
-		_, raw2, _, err := panelCallAuto(node, "POST", "/api/v2/files/read", map[string]any{"path": path})
+		_, raw2, _, err := panelCallAuto(node, "POST", "/api/v2/files/content", map[string]any{"path": path})
 		if err != nil {
 			continue
 		}

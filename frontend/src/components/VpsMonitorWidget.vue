@@ -5,7 +5,7 @@ import { useMainStore } from "../stores/main";
 
 interface VpsContainer { name: string; state: string; image: string }
 interface VpsNodeStatus {
-  id: string; name: string; host: string; online: boolean; error?: string;
+  id: string; name: string; host: string; panelUrl: string; online: boolean; error?: string;
   latencyMs: number; updatedAt: number; os: string; cores: number;
   cpuPercent: number; memPercent: number; memUsed: number; memTotal: number;
   diskPercent: number; diskUsed: number; diskTotal: number;
@@ -23,7 +23,9 @@ const loaded = ref(false);
 const loadError = ref("");
 let timer: ReturnType<typeof setInterval> | null = null;
 
-const isCompact = computed(() => (props.widget.h ?? props.widget.rowSpan ?? 1) <= 1);
+const heightNow = computed(() => props.widget.h ?? props.widget.rowSpan ?? 1);
+const isMicro = computed(() => heightNow.value <= 0.5);
+const isCompact = computed(() => !isMicro.value && heightNow.value <= 1);
 const updatedText = computed(() => {
   const t = Math.max(0, ...nodes.value.map((n) => n.updatedAt || 0));
   if (!t) return "";
@@ -72,6 +74,15 @@ const fmtUptime = (s: number) => {
   const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600);
   return d > 0 ? `${d} 天 ${h} 小时` : `${h} 小时`;
 };
+// 地址只显示「协议//域名」段（不带端口和安全入口路径），点击跳完整面板地址
+const domainOf = (u: string): string => {
+  try {
+    const x = new URL(u);
+    return `${x.protocol}//${x.hostname}`;
+  } catch {
+    return u.replace(/^(https?:\/\/[^/]+).*/, "$1");
+  }
+};
 const CIRC = 2 * Math.PI * 9;
 const ringOffset = (v: number) => CIRC * (1 - Math.min(100, Math.max(0, v)) / 100);
 
@@ -90,7 +101,7 @@ const keyService = (n: VpsNodeStatus): VpsContainer | null => {
       color: '#fff',
     }"
   >
-    <div class="px-4 py-2.5 border-b border-white/10 flex items-center justify-between bg-white/10 shrink-0">
+    <div :class="isMicro ? 'py-1.5' : 'py-2.5'" class="px-4 border-b border-white/10 flex items-center justify-between bg-white/10 shrink-0">
       <div class="flex items-center gap-2">
         <span class="text-base">🖥️</span>
         <span class="font-bold text-sm">VPS 监控</span>
@@ -108,6 +119,25 @@ const keyService = (n: VpsNodeStatus): VpsContainer | null => {
       <div v-else-if="loadError && !nodes.length" class="text-red-300 text-sm px-1 py-2">数据加载失败：{{ loadError }}</div>
       <div v-else-if="!nodes.length" class="text-white/60 text-sm px-1 py-2 leading-relaxed">
         还没有添加 VPS 节点。<br />到「设置 → 扩展」页的「VPS 监控（1Panel）」卡里填上面板地址和 API 密钥即可。
+      </div>
+
+      <!-- 微缩模式（4x0.5）：一台一行，全部信息塞满 -->
+      <div v-else-if="isMicro" class="flex flex-col">
+        <div v-for="n in nodes" :key="n.id" class="flex items-center gap-2 text-[11px] leading-tight py-[3px] border-b border-white/5 last:border-b-0 whitespace-nowrap overflow-hidden">
+          <span :class="n.online ? 'text-green-400' : 'text-red-400'" class="shrink-0">●</span>
+          <span class="font-bold text-white/90 shrink-0">{{ n.name }}</span>
+          <template v-if="n.online">
+            <span class="text-white/55">CPU <b :style="{ color: barColor(n.cpuPercent) }">{{ pct(n.cpuPercent) }}%</b></span>
+            <span class="text-white/55">内存 <b :style="{ color: barColor(n.memPercent) }">{{ pct(n.memPercent) }}%</b></span>
+            <span class="text-white/55">磁盘 <b :style="{ color: barColor(n.diskPercent) }">{{ pct(n.diskPercent) }}%</b></span>
+            <span v-if="keyService(n)" :class="keyService(n)!.state === 'running' ? 'text-green-400' : 'text-red-400'" class="shrink-0">{{ keyService(n)!.name }} {{ keyService(n)!.state === 'running' ? '运行中' : keyService(n)!.state }}</span>
+            <span v-else class="text-white/55 shrink-0">容器 {{ n.containersRunning }}/{{ n.containersTotal }}</span>
+            <span v-if="n.sshLogAvailable" :class="n.sshFailed24h >= 500 ? 'text-red-400 font-bold' : 'text-white/55'" class="shrink-0">🛡️ {{ n.sshFailed24h }} 次</span>
+            <a :href="n.panelUrl" target="_blank" rel="noopener" class="ml-auto text-sky-300/80 hover:text-sky-200 hover:underline truncate" @click.stop>{{ domainOf(n.panelUrl) }}</a>
+            <span class="text-white/40 shrink-0">{{ n.latencyMs }}ms</span>
+          </template>
+          <span v-else class="text-red-300 truncate">离线 · {{ n.error || '连接失败' }}</span>
+        </div>
       </div>
 
       <!-- 文件袋卡片：每台服务器一张 -->
@@ -181,7 +211,7 @@ const keyService = (n: VpsNodeStatus): VpsContainer | null => {
                   <span>负载 {{ n.load1.toFixed(2) }} · 已运行 {{ fmtUptime(n.uptimeSec) }}</span>
                 </div>
                 <div class="flex justify-between text-[11px] text-white/35 px-0.5 mt-0.5">
-                  <span>{{ n.host }}</span>
+                  <a :href="n.panelUrl" target="_blank" rel="noopener" class="text-sky-300/80 hover:text-sky-200 hover:underline" @click.stop>{{ domainOf(n.panelUrl) }}</a>
                   <span>内存 {{ fmtGB(n.memUsed) }}/{{ fmtGB(n.memTotal) }} · 磁盘 {{ fmtGB(n.diskUsed) }}/{{ fmtGB(n.diskTotal) }}</span>
                 </div>
               </template>

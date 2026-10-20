@@ -4416,6 +4416,12 @@ watch(activeTab, (val) => {
                 <span v-else class="text-xs text-green-600 font-bold">组件已在首页</span>
               </div>
               <div class="space-y-3">
+                <div class="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800 leading-relaxed">
+                  <div class="font-bold mb-1">⚠️ 新服务器要先装日志服务（只需一次）</div>
+                  想在组件里看到「SSH 爆破次数」，服务器上必须有 SSH 日志文件；新系统默认没装。打开该服务器 1Panel 的「终端」，运行这条命令（约半分钟）：
+                  <code class="block mt-1.5 bg-gray-900 text-green-300 rounded px-2 py-1.5 font-mono text-[11px] break-all select-all">apt update &amp;&amp; apt install rsyslog -y &amp;&amp; systemctl enable --now rsyslog</code>
+                  <div class="mt-1.5">装完不用再管，组件几分钟内自动开始显示爆破数据；没装的服务器只是少这一项数据，其它监控不受影响。</div>
+                </div>
                 <p class="text-xs text-gray-500">数据从每台 VPS 的 1Panel 面板接口采集，不用 SSH、不用存机器密码：打开 1Panel → 设置 → API 接口，开启并生成密钥后填到这里。每 20 秒自动刷新：CPU、内存、磁盘、容器（含 sing-box）状态、网络速率。海外面板地址国内直连常被掐，默认走 NAS 的 sing-box 代理访问。</p>
                 <div v-for="n in vpsNodes" :key="n.id" class="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
                   <div class="grid grid-cols-2 gap-2">
