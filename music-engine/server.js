@@ -7,6 +7,7 @@ process.env.NODE_USE_ENV_PROXY = '0'
 // 兜底：任何未捕获异常只记日志，不让引擎进程退出
 process.on('uncaughtException', (e) => console.error('[engine] uncaught:', e && e.message))
 process.on('unhandledRejection', (e) => console.error('[engine] unhandledRejection:', e && e.message))
+import './src/shim.js'
 import http from 'node:http'
 import { URL } from 'node:url'
 import needle from 'needle'
@@ -122,7 +123,8 @@ const routes = {
     const musicInfo = JSON.parse(String(q.musicInfo || '{}'))
     try {
       const r = await sources[source].getLyric(musicInfo)
-      return r
+      // SDK 的 getLyric 返回 httpFetch 句柄，要等它的 promise 才是歌词数据
+      return r && r.promise ? await r.promise : r
     } catch (e) {
       const inst = sourceManager.current()
       if (inst && inst.sources[source] && inst.sources[source].actions.includes('lyric')) {
@@ -137,7 +139,8 @@ const routes = {
     const source = String(q.source || 'kw')
     const musicInfo = JSON.parse(String(q.musicInfo || '{}'))
     try {
-      return await sources[source].getPic(musicInfo)
+      const r = await sources[source].getPic(musicInfo)
+      return r && r.promise ? await r.promise : r
     } catch (e) {
       const inst = sourceManager.current()
       if (inst && inst.sources[source] && inst.sources[source].actions.includes('pic')) {
