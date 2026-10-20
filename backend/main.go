@@ -420,6 +420,13 @@ func main() {
 		checkin.GET("/status", yunqi.CheckinStatus)
 	}
 
+	// 模块 1b：IT&AI 日报（查询走 JWT，推送走 OpenAPI token 供 n8n 调用）
+	itdaily := api.Group("/itdaily")
+	itdaily.Use(middleware.AuthMiddleware())
+	{
+		itdaily.GET("/latest", yunqi.ITDailyLatest)
+	}
+
 	// 模块 4：AI（JWT 鉴权）
 	aiGrp := api.Group("/ai")
 	aiGrp.Use(middleware.AuthMiddleware())
@@ -456,6 +463,7 @@ func main() {
 		openapi.POST("/bookmark/create", yunqi.OpenAPICreateBookmark)
 		openapi.GET("/categories", yunqi.OpenAPIListCategories)
 		openapi.GET("/version", yunqi.OpenAPIVersion)
+		openapi.POST("/itdaily/push", yunqi.ITDailyPush)
 	}
 
 	// 模块 3：MCP 服务端（token 鉴权，JSON-RPC 2.0 over HTTP）

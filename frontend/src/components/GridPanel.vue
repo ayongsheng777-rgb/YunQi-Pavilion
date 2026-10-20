@@ -59,6 +59,7 @@ const GroupSettingsModal = loadAsync(() => import("./GroupSettingsModal.vue"));
 import LoginModal from "./LoginModal.vue";
 const BookmarkWidget = loadAsync(() => import("./BookmarkWidget.vue"));
 const CheckinWidget = loadAsync(() => import("./CheckinWidget.vue"));
+const ITDailyWidget = loadAsync(() => import("./ITDailyWidget.vue"));
 import CheckinBell from "./CheckinBell.vue";
 import { trackCheckinOpen } from "@/utils/checkin";
 const MemoWidget = loadAsync(() => import("./MemoWidget.vue"));
@@ -104,6 +105,7 @@ const gridWidgetTypes = new Set([
   "iframe",
   "bookmarks",
   "checkin",
+  "itdaily",
   "hot",
   "clockweather",
   "amap-weather",
@@ -3514,6 +3516,7 @@ onUnmounted(() => {
             />
             <BookmarkWidget v-else-if="widget.type === 'bookmarks'" :widget="widget" />
             <CheckinWidget v-else-if="widget.type === 'checkin'" :widget="widget" />
+            <ITDailyWidget v-else-if="widget.type === 'itdaily'" :widget="widget" />
             <HotWidget v-else-if="widget.type === 'hot'" :widget="widget" :is-edit-mode="isEditMode" />
             <ClockWeatherWidget v-else-if="widget.type === 'clockweather'" :widget="widget" />
             <AmapWeatherWidget v-else-if="widget.type === 'amap-weather'" :widget="widget" />
