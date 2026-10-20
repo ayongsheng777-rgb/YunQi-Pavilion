@@ -191,7 +191,7 @@ type panelResp struct {
 }
 
 func fetchNodeStatus(node VpsNode, prev *VpsNodeStatus) *VpsNodeStatus {
-	st := &VpsNodeStatus{ID: node.ID, Name: node.Name, Host: hostOf(node.BaseUrl), PanelURL: node.BaseUrl, UpdatedAt: time.Now().UnixMilli()}
+	st := &VpsNodeStatus{ID: node.ID, Name: node.Name, PanelURL: node.BaseUrl, UpdatedAt: time.Now().UnixMilli()}
 	if u, err := url.Parse(node.BaseURL); err == nil {
 		st.Host = u.Host
 	}
