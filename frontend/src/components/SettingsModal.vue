@@ -895,6 +895,10 @@ const tokenLoading = ref(false);
 const maskedToken = computed(() =>
   yunqiToken.value ? "••••••••" + yunqiToken.value.slice(-4) : "——",
 );
+// MCP 端点与 OpenAPI 基址（按当前访问地址推导）
+const mcpEndpoint = computed(() => `${window.location.origin}/mcp`);
+const openapiBase = computed(() => `${window.location.origin}/openapi/v1`);
+const mcpToolCount = ref(12);
 
 const loadYunqiToken = async () => {
   tokenLoading.value = true;
@@ -944,20 +948,36 @@ const copyYunqiToken = async () => {
 };
 
 // ---- AI 聊天模型设置 ----
+const aiProvider = ref("DeepSeek 开放平台");
+const aiPresets = ref<Array<{name: string; base_url: string; model: string; key_url: string; homepage: string}>>([]);
 const aiBaseUrl = ref("https://api.deepseek.com/v1");
 const aiApiKey = ref("");
 const aiModel = ref("deepseek-chat");
 const aiHasKey = ref(false);
 const aiSaving = ref(false);
+const aiProxyEnabled = ref(false);
+const aiProxyUrl = ref("http://192.168.57.228:7890");
+
+const onAiProviderChange = () => {
+  const p = aiPresets.value.find((x) => x.name === aiProvider.value);
+  if (p && p.name !== "自定义（OpenAI 兼容）") {
+    aiBaseUrl.value = p.base_url;
+    aiModel.value = p.model;
+  }
+};
 
 const loadAiConfig = async () => {
   try {
     const res = await fetch("/api/ai/config", { headers: store.getHeaders() });
     if (res.ok) {
       const data = await res.json();
+      if (data?.provider) aiProvider.value = String(data.provider);
       if (data?.base_url) aiBaseUrl.value = String(data.base_url);
       if (data?.model) aiModel.value = String(data.model);
       aiHasKey.value = !!data?.has_key;
+      aiProxyEnabled.value = !!data?.proxy_enabled;
+      if (data?.proxy_url) aiProxyUrl.value = String(data.proxy_url);
+      if (Array.isArray(data?.presets)) aiPresets.value = data.presets;
     }
   } catch (e) {
     console.error("加载 AI 配置失败", e);
@@ -979,9 +999,12 @@ const saveAiConfig = async () => {
       method: "POST",
       headers: store.getHeaders(),
       body: JSON.stringify({
+        provider: aiProvider.value,
         base_url: aiBaseUrl.value.trim(),
         api_key: aiApiKey.value, // 为空表示不改动已有密钥
         model: aiModel.value.trim(),
+        proxy_enabled: aiProxyEnabled.value,
+        proxy_url: aiProxyUrl.value.trim(),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -4910,26 +4933,39 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 </div>
               </div>
 
-              <!-- 云栖阁：插件与 AI 助手的钥匙（Token） -->
+              <!-- 云栖阁：MCP 服务端配置（给外部 AI 助手用） -->
               <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 mb-6">
-                <h5 class="text-sm font-bold text-gray-900 mb-2">{{ $t('common.yunqi.settings.tokenSection') }}</h5>
-                <p class="text-xs text-gray-500 mb-3">{{ $t('common.yunqi.settings.tokenDesc') }}</p>
-                <div class="flex items-center gap-2">
-                  <code class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-white border border-gray-200 text-sm font-mono truncate">
-                    {{ tokenLoading ? "读取中…" : showYunqiToken ? yunqiToken : maskedToken }}
-                  </code>
-                  <button
-                    @click="showYunqiToken = !showYunqiToken"
-                    class="px-3 py-2 rounded-lg text-xs font-bold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 whitespace-nowrap"
-                  >
-                    {{ showYunqiToken ? $t('common.yunqi.settings.tokenHide') : $t('common.yunqi.settings.tokenShow') }}
-                  </button>
-                  <button
-                    @click="copyYunqiToken"
-                    class="px-3 py-2 rounded-lg text-xs font-bold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 whitespace-nowrap"
-                  >
-                    {{ $t('common.yunqi.settings.tokenCopy') }}
-                  </button>
+                <h5 class="text-sm font-bold text-gray-900 mb-2">🔌 MCP 服务端 <span class="text-xs font-normal text-gray-500">（给 Claude / 其他 AI 助手连接用）</span></h5>
+                <p class="text-xs text-gray-500 mb-3">外部 AI 助手通过 MCP 协议可搜索、增删你的书签。端点与钥匙如下：</p>
+                <div class="space-y-2 text-xs">
+                  <div>
+                    <label class="text-gray-500 block mb-1">MCP 端点（POST，JSON-RPC 2.0）</label>
+                    <code class="block px-3 py-2 rounded-lg bg-white border border-gray-200 font-mono break-all">{{ mcpEndpoint }}</code>
+                  </div>
+                  <div>
+                    <label class="text-gray-500 block mb-1">钥匙（Token，请求头 Authorization: Bearer 或 token 头）</label>
+                    <div class="flex items-center gap-2">
+                      <code class="flex-1 min-w-0 px-3 py-2 rounded-lg bg-white border border-gray-200 font-mono truncate">
+                        {{ tokenLoading ? "读取中…" : showYunqiToken ? yunqiToken : maskedToken }}
+                      </code>
+                      <button
+                        @click="showYunqiToken = !showYunqiToken"
+                        class="px-3 py-2 rounded-lg text-xs font-bold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 whitespace-nowrap"
+                      >
+                        {{ showYunqiToken ? $t('common.yunqi.settings.tokenHide') : $t('common.yunqi.settings.tokenShow') }}
+                      </button>
+                      <button
+                        @click="copyYunqiToken"
+                        class="px-3 py-2 rounded-lg text-xs font-bold bg-white border border-gray-200 text-gray-700 hover:bg-gray-100 whitespace-nowrap"
+                      >
+                        {{ $t('common.yunqi.settings.tokenCopy') }}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="text-gray-500 block mb-1">可用工具（{{ mcpToolCount }} 个）</label>
+                    <p class="text-gray-600 leading-relaxed">搜索书签 · 分类列表 · 分类书签 · 查书签详情 · 新增/修改/删除书签 · 签到管理 · AI 问答 · 系统状态</p>
+                  </div>
                 </div>
                 <button
                   @click="regenerateYunqiToken"
@@ -4940,10 +4976,39 @@ document.querySelector('.card-item').addEventListener('click', () => {
                 </button>
               </div>
 
+              <!-- 云栖阁：浏览器插件 OpenAPI -->
+              <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 mb-6">
+                <h5 class="text-sm font-bold text-gray-900 mb-2">🧩 浏览器插件接口 <span class="text-xs font-normal text-gray-500">（OpenAPI，插件收藏网址用）</span></h5>
+                <p class="text-xs text-gray-500 mb-3">浏览器助手插件用下面接口把网址收入云栖阁，钥匙与上方 MCP 共用同一把。</p>
+                <div class="space-y-1 text-xs font-mono">
+                  <div class="px-3 py-1.5 rounded-lg bg-white border border-gray-200 break-all">POST {{ openapiBase }}/bookmark/create <span class="text-gray-400">— 收藏网址</span></div>
+                  <div class="px-3 py-1.5 rounded-lg bg-white border border-gray-200 break-all">GET {{ openapiBase }}/categories <span class="text-gray-400">— 分类列表</span></div>
+                  <div class="px-3 py-1.5 rounded-lg bg-white border border-gray-200 break-all">POST {{ openapiBase }}/itdaily/push <span class="text-gray-400">— 推送 IT 日报（n8n 用）</span></div>
+                </div>
+              </div>
+
               <!-- 云栖阁：AI 聊天模型设置 -->
               <div class="bg-gray-50 p-5 rounded-xl border border-gray-200 mb-6">
                 <h5 class="text-sm font-bold text-gray-900 mb-3">{{ $t('common.yunqi.settings.aiSection') }}</h5>
                 <div class="space-y-2">
+                  <div>
+                    <label class="text-xs text-gray-500 block mb-1">AI 平台</label>
+                    <select
+                      v-model="aiProvider"
+                      @change="onAiProviderChange"
+                      class="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:border-gray-900 outline-none bg-white"
+                    >
+                      <option v-for="p in aiPresets" :key="p.name" :value="p.name">{{ p.name }}</option>
+                    </select>
+                    <div v-if="aiPresets.find((x) => x.name === aiProvider)?.key_url" class="mt-1">
+                      <a
+                        :href="aiPresets.find((x) => x.name === aiProvider)?.key_url"
+                        target="_blank"
+                        rel="noopener"
+                        class="text-xs text-blue-500 hover:underline"
+                      >👉 去申请 API Key</a>
+                    </div>
+                  </div>
                   <div>
                     <label class="text-xs text-gray-500 block mb-1">{{ $t('common.yunqi.settings.aiBaseUrl') }}</label>
                     <input
@@ -4973,6 +5038,19 @@ document.querySelector('.card-item').addEventListener('click', () => {
                       class="w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:border-gray-900 outline-none"
                     />
                   </div>
+                  <div class="pt-1">
+                    <label class="flex items-center gap-2 text-xs text-gray-700 cursor-pointer">
+                      <input type="checkbox" v-model="aiProxyEnabled" class="w-4 h-4" />
+                      国际模型走代理（推荐：OpenRouter / Groq / Google 等国外平台开启）
+                    </label>
+                    <input
+                      v-if="aiProxyEnabled"
+                      v-model="aiProxyUrl"
+                      placeholder="http://192.168.57.228:7890"
+                      class="mt-1 w-full px-3 py-2 rounded-lg border border-gray-300 text-sm focus:border-gray-900 outline-none"
+                    />
+                    <p v-if="aiProxyEnabled" class="text-xs text-gray-400 mt-1">默认用 J4125 上 sing-box 的代理（7890 端口），不用改</p>
+                  </div>
                   <button
                     @click="saveAiConfig"
                     :disabled="aiSaving"
@@ -4980,6 +5058,7 @@ document.querySelector('.card-item').addEventListener('click', () => {
                   >
                     {{ aiSaving ? "保存中…" : $t('common.save') }}
                   </button>
+                  <p class="text-xs text-gray-400">💡 AI 助手现在可以帮你：找网址、收藏新网址、删除网址、修改网址信息、查看分类</p>
                 </div>
               </div>
 

@@ -150,6 +150,17 @@ var mcpAvailableTools = []mcpTool{
 		},
 	},
 	{
+		Name:        "delete_bookmark",
+		Description: "按 ID 删除一个书签。",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"id": strProp("书签 ID（必填）"),
+			},
+			"required": []string{"id"},
+		},
+	},
+	{
 		Name:        "checkin_sites",
 		Description: "列出签到提醒里的全部站点（含是否启用）。",
 		InputSchema: map[string]interface{}{
@@ -294,6 +305,8 @@ func mcpCallTool(name string, args map[string]interface{}) (string, bool) {
 		return mcpCreateBookmark(user, args)
 	case "update_bookmark":
 		return mcpUpdateBookmark(user, args)
+	case "delete_bookmark":
+		return mcpDeleteBookmark(user, mcpStrArg(args, "id"))
 	case "checkin_sites":
 		return mcpCheckinSites(user)
 	case "checkin_today_status":
@@ -515,6 +528,27 @@ func mcpUpdateBookmark(user string, args map[string]interface{}) (string, bool) 
 		return "保存失败", true
 	}
 	return "书签 " + id + " 已更新", false
+}
+
+func mcpDeleteBookmark(user, id string) (string, bool) {
+	if id == "" {
+		return "请传入书签 ID", true
+	}
+	userFile := UserDataFile(user)
+	groups, err := loadBookmarkGroups(userFile)
+	if err != nil {
+		return "读取书签失败", true
+	}
+	gi, ii := findItemAcrossGroups(groups, id)
+	if gi < 0 {
+		return "找不到这个书签", true
+	}
+	title := groups[gi].Items[ii].Title
+	groups[gi].Items = append(groups[gi].Items[:ii], groups[gi].Items[ii+1:]...)
+	if err := saveBookmarkGroups(userFile, groups); err != nil {
+		return "保存失败", true
+	}
+	return "已删除书签：" + title, false
 }
 
 func mcpCheckinSites(user string) (string, bool) {
