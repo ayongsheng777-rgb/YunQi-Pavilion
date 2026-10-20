@@ -1,185 +1,17 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, nextTick } from "vue";
-import { useStorage } from "@vueuse/core";
-import { useMainStore } from "../stores/main";
+import { ref, onMounted, watch, nextTick } from "vue";
+import { useMusicPlayer } from "@/stores/musicPlayer";
+import MusicPanel from "@/components/MusicPanel.vue";
 
-const store = useMainStore();
-const isPlaying = ref(false);
-const audioRef = ref<HTMLAudioElement | null>(null);
-const musicVolume = useStorage<number>("flat-nas-music-volume", 0.7);
-const musicList = ref<string[]>([]);
-const currentSongName = ref("加载中...");
+const player = useMusicPlayer();
+const { current, isPlaying, resolving, currentLyric, playError } = player;
+
+// ---------- 跑马灯（沿用原播放器的做法） ----------
 const titleWrapRef = ref<HTMLElement | null>(null);
 const titleTextRef = ref<HTMLElement | null>(null);
 const marqueeEnabled = ref(false);
 const marqueeDuration = ref("3s");
 const marqueeTo = ref("0px");
-
-// 🎶 同步全局播放状态
-watch(
-  () => store.activeMusicPlayer,
-  (val) => {
-    if (val !== "mini-player" && isPlaying.value) {
-      if (audioRef.value) audioRef.value.pause();
-      isPlaying.value = false;
-    }
-  },
-);
-
-// 📜 播放历史管理
-const history = ref<string[]>([]);
-const historyIndex = ref(-1);
-
-// 🎶 智能 URL 处理
-const getMusicUrl = (fileName: string) => {
-  if (!fileName || fileName === "加载中..." || fileName === "无音乐")
-    return undefined;
-  // Support nested paths by encoding each segment separately
-  const url = `/music/${fileName
-    .split("/")
-    .map((part) => encodeURIComponent(part).replace(/'/g, "%27"))
-    .join("/")}`;
-  return store.getAssetUrl(url);
-};
-
-// 📥 获取列表
-const fetchMusicList = async () => {
-  try {
-    const res = await fetch("/api/music-list");
-    const files = await res.json();
-    if (files.length > 0) {
-      musicList.value = files;
-      // 初始化播放第一首
-      const firstSong = files[Math.floor(Math.random() * files.length)];
-      currentSongName.value = firstSong;
-      history.value = [firstSong];
-      historyIndex.value = 0;
-
-      if (store.appConfig.autoPlayMusic) {
-        setTimeout(() => {
-          playAudio();
-        }, 1000);
-      }
-    } else {
-      currentSongName.value = "无音乐";
-    }
-  } catch {
-    currentSongName.value = "获取失败";
-  }
-};
-
-let playRequestId = 0;
-let switchTimer: ReturnType<typeof setTimeout> | null = null;
-const scheduleSwitch = (fn: () => void | Promise<void>) => {
-  if (switchTimer) clearTimeout(switchTimer);
-  switchTimer = setTimeout(() => {
-    void fn();
-  }, 120);
-};
-
-// ⏭️ 切歌 (下一首)
-const playNext = () => {
-  if (musicList.value.length <= 1) return;
-
-  scheduleSwitch(async () => {
-    if (historyIndex.value < history.value.length - 1) {
-      historyIndex.value++;
-      currentSongName.value = history.value[historyIndex.value] || "";
-    } else {
-      let nextSong = currentSongName.value;
-      while (nextSong === currentSongName.value) {
-        nextSong =
-          musicList.value[Math.floor(Math.random() * musicList.value.length)] ||
-          "";
-      }
-      currentSongName.value = nextSong;
-      history.value.push(nextSong);
-      historyIndex.value++;
-    }
-
-    await nextTick();
-    playAudio();
-  });
-};
-
-// ⏮️ 上一首
-const playPrev = () => {
-  if (historyIndex.value > 0) {
-    scheduleSwitch(async () => {
-      historyIndex.value--;
-      currentSongName.value = history.value[historyIndex.value] || "";
-      await nextTick();
-      playAudio();
-    });
-  }
-};
-
-// 🔊 播放逻辑封装
-const playAudio = async () => {
-  const player = audioRef.value;
-  if (!player) return;
-  const requestId = ++playRequestId;
-  try {
-    player.pause();
-    player.load();
-    const promise = player.play();
-    if (promise !== undefined) await promise;
-    if (requestId !== playRequestId) return;
-    isPlaying.value = true;
-    store.activeMusicPlayer = "mini-player";
-  } catch (e) {
-    if (requestId !== playRequestId) return;
-    const msg = (e as Error)?.message || "";
-    if (
-      msg.includes("interrupted by a new load request") ||
-      msg.includes("play() request was interrupted")
-    ) {
-      return;
-    }
-    console.error("[MiniPlayer] Play failed:", e);
-    isPlaying.value = false;
-  }
-};
-
-const handleError = (e: Event) => {
-  const target = e.target as HTMLAudioElement;
-  console.error("[MiniPlayer] Audio error:", target.error, target.src);
-  isPlaying.value = false;
-};
-
-// ⏯️ 播放控制
-const toggleMusic = async () => {
-  const player = audioRef.value;
-  if (!player) return;
-  if (isPlaying.value) {
-    player.pause();
-    isPlaying.value = false;
-    playRequestId++;
-  } else {
-    // if (player.readyState === 0 || player.error) player.load() // playAudio/toggle already handles loading implicitly via play or manual load
-    try {
-      // 如果是暂停状态直接 play，如果是出错状态可能需要 load
-      if (player.error) player.load();
-      const requestId = ++playRequestId;
-      const promise = player.play();
-      if (promise !== undefined) await promise;
-      if (requestId !== playRequestId) return;
-      isPlaying.value = true;
-      store.activeMusicPlayer = "mini-player";
-    } catch (e) {
-      const msg = (e as Error)?.message || "";
-      if (
-        msg.includes("interrupted by a new load request") ||
-        msg.includes("play() request was interrupted")
-      ) {
-        return;
-      }
-      console.error("[MiniPlayer] Toggle play failed:", e);
-      player.load(); // 失败尝试重载
-      // 再次尝试播放可能会导致死循环，这里只 load
-    }
-  }
-};
 
 const setupMarquee = () => {
   const wrap = titleWrapRef.value;
@@ -191,105 +23,39 @@ const setupMarquee = () => {
   const overflow = text.scrollWidth - wrap.clientWidth;
   if (overflow > 0 && isPlaying.value) {
     marqueeEnabled.value = true;
-    const seconds = Math.max(overflow / 50, 2);
-    marqueeDuration.value = seconds + "s";
+    marqueeDuration.value = Math.max(overflow / 50, 2) + "s";
     marqueeTo.value = "-" + overflow + "px";
   } else {
     marqueeEnabled.value = false;
   }
 };
 
-// 监听歌曲变化和播放状态，更新跑马灯
-watch([currentSongName, isPlaying], async () => {
+watch([() => current.value?.name, isPlaying], async () => {
   await nextTick();
   setupMarquee();
 });
 
-// 监听音量变化
-watch(
-  musicVolume,
-  (val) => {
-    if (audioRef.value) {
-      audioRef.value.volume = Math.max(0, Math.min(1, val));
-    }
-  },
-  { immediate: true },
-);
-
-let mountTimer: ReturnType<typeof setTimeout>;
-let gestureHandlerAttached = false;
-
-const tryAutoplay = async () => {
-  if (!store.appConfig.autoPlayMusic) return;
-  const player = audioRef.value;
-  if (!player) return;
-  try {
-    player.load();
-    await player.play();
-    isPlaying.value = true;
-  } catch {
-    attachGestureAutoplay();
-  }
-};
-
-const attachGestureAutoplay = () => {
-  if (gestureHandlerAttached) return;
-  gestureHandlerAttached = true;
-  const handler = async () => {
-    await tryAutoplay();
-    detach();
-  };
-  const detach = () => {
-    window.removeEventListener("pointerdown", handler);
-    window.removeEventListener("touchstart", handler);
-    window.removeEventListener("keydown", handler);
-    document.removeEventListener("click", handler);
-  };
-  window.addEventListener("pointerdown", handler, { once: true });
-  window.addEventListener("touchstart", handler, { once: true });
-  window.addEventListener("keydown", handler, { once: true });
-  document.addEventListener("click", handler, { once: true });
+const statusText = () => {
+  if (resolving.value) return "正在解析…";
+  if (playError.value) return playError.value;
+  if (currentLyric.value) return currentLyric.value;
+  if (!current.value) return "点右侧图标选歌";
+  return isPlaying.value ? "正在播放" : "已暂停";
 };
 
 onMounted(() => {
-  console.log("[MiniPlayer] Mounted");
-  // 延迟加载，避免因父组件重渲染导致的快速卸载重挂引发的请求 Abort
-  mountTimer = setTimeout(() => {
-    fetchMusicList();
-    setTimeout(setupMarquee, 200);
-  }, 500);
-  if (store.appConfig.autoPlayMusic) attachGestureAutoplay();
+  void player.initPlayer();
 });
-
-onUnmounted(() => {
-  console.log("[MiniPlayer] Unmounted");
-  if (mountTimer) clearTimeout(mountTimer);
-});
-
-watch(
-  () => store.appConfig.autoPlayMusic,
-  async (val) => {
-    if (val) await tryAutoplay();
-  },
-  { immediate: false },
-);
 </script>
 
 <template>
   <div
-    class="h-10 w-10 xl:w-[160px] px-0 rounded-full bg-transparent flex items-center gap-2 transition-all group select-none relative left-0 xl:-left-[5px]"
+    class="h-10 w-10 xl:w-[230px] px-0 rounded-full bg-transparent flex items-center gap-2 transition-all group select-none relative left-0 xl:-left-[5px]"
   >
-    <audio
-      ref="audioRef"
-      preload="none"
-      :src="getMusicUrl(currentSongName)"
-      @ended="playNext"
-      @error="handleError"
-    ></audio>
-
     <button
-      @click="toggleMusic"
+      @click="player.togglePlay"
       class="w-10 h-10 flex-shrink-0 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/40 hover:text-white transition-all active:scale-95 text-white backdrop-blur border border-white/20 shadow-sm"
+      :title="current ? (isPlaying ? '暂停' : '播放') : '点歌'"
     >
       <svg
         v-if="isPlaying"
@@ -300,7 +66,7 @@ watch(
       >
         <path
           fill-rule="evenodd"
-          d="M6.75 5.25a.75.75 0 01.75-.75H9a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H7.5a.75.75 0 01-.75-.75V5.25zm7.5 0A.75.75 0 0115 4.5h1.5a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H15a.75.75 0 01-.75-.75V5.25z"
+          d="M6.75 5.25a.75.75 0 01.75-.75H9a.75.75 0 01.75.75v13.5a.75.75 0 01-.75.75H7.5a.75.75 0 01-.75-.75V5.25zm7.5 0A.75.75 0 0115 4.5h1.5a.75.75 0 01.75.75v13.5a.75.75 0 01.75.75H15a.75.75 0 01-.75-.75V5.25z"
           clip-rule="evenodd"
         />
       </svg>
@@ -322,11 +88,10 @@ watch(
     <div
       ref="titleWrapRef"
       class="flex-1 overflow-hidden text-xs font-medium text-white text-shadow hidden xl:flex flex-col justify-center min-w-0 h-full py-0.5"
-      :title="currentSongName"
+      :title="current ? current.name + ' - ' + current.singer : '云栖阁音乐'"
     >
       <span
         ref="titleTextRef"
-        class=""
         :style="
           marqueeEnabled
             ? {
@@ -337,19 +102,18 @@ watch(
               }
             : { whiteSpace: 'nowrap' }
         "
-        >{{ currentSongName.replace(/\.(mp3|flac|wav|m4a)$/i, "") }}</span
+        >{{ current ? current.name : "云栖阁音乐" }}</span
       >
       <div class="flex items-center w-full pr-0">
-        <span
-          class="text-[12px] opacity-70 origin-left truncate w-auto mr-auto"
-          >{{ isPlaying ? "正在播放" : "已暂停" }}</span
-        >
+        <span class="text-[12px] opacity-70 origin-left truncate w-auto mr-auto">{{
+          statusText()
+        }}</span>
         <div class="flex items-center gap-0.5 flex-shrink-0 origin-right">
           <button
-            @click="playPrev"
+            @click="player.step(-1)"
             class="w-6 h-6 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
             title="上一首"
-            :disabled="historyIndex <= 0"
+            :disabled="!player.queue.value.length"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -363,9 +127,10 @@ watch(
             </svg>
           </button>
           <button
-            @click="playNext"
-            class="w-6 h-6 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-all"
+            @click="player.step(1)"
+            class="w-6 h-6 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-all disabled:opacity-30 disabled:hover:bg-transparent"
             title="下一首"
+            :disabled="!player.queue.value.length"
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -378,9 +143,29 @@ watch(
               />
             </svg>
           </button>
+          <button
+            @click="player.openPanel('search')"
+            class="w-6 h-6 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-all"
+            title="点歌"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              class="w-4 h-4"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M9.965 11.026a5 5 0 118.06 4.06l3.288 3.287a.75.75 0 11-1.06 1.06l-3.288-3.287a5 5 0 01-6.928 0 5 5 0 010-7.12zM10.965 5a4 4 0 100 8 4 4 0 000-8z"
+                clip-rule="evenodd"
+              />
+            </svg>
+          </button>
         </div>
       </div>
     </div>
+
+    <MusicPanel />
   </div>
 </template>
 

@@ -926,6 +926,89 @@ const copyMcpPrompt = async () => {
   }
 };
 
+// ---- 云栖阁：音乐（LX 引擎）配置 ----
+import {
+  fetchMusicConfig as yqFetchMusicConfig,
+  saveMusicConfig as yqSaveMusicConfig,
+  fetchSources as yqFetchSources,
+  importSource as yqImportSource,
+  deleteSource as yqDeleteSource,
+  type MusicConfig as YqMusicConfig,
+  type SourceScript as YqSourceScript,
+} from "@/utils/music";
+const lxConfig = ref<YqMusicConfig>({
+  engineUrl: "http://music-engine:23400",
+  proxyEnabled: true,
+  proxyHost: "192.168.57.228",
+  proxyPort: 7890,
+  downloadDir: "/downloads",
+  defaultSource: "kw",
+  defaultQuality: "320k",
+  defaultMode: "play",
+});
+const lxSources = ref<YqSourceScript[]>([]);
+const lxSourceUrl = ref("");
+const lxSaving = ref(false);
+const lxSaveMsg = ref("");
+const lxSaveOk = ref(true);
+const lxImporting = ref(false);
+const lxImportMsg = ref("");
+const lxPresetSources = [
+  { name: "ChangQing", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/changqing/latest.js" },
+  { name: "Flower", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/flower/latest.js" },
+  { name: "Grass", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/grass/latest.js" },
+  { name: "HuanYin", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/huanyin/latest.js" },
+  { name: "Huibq", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/huibq/latest.js" },
+  { name: "ikun", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/ikun/latest.js" },
+  { name: "JuheApi", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/juhe/latest.js" },
+  { name: "LX", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/lx/latest.js" },
+  { name: "QDY", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/qdy/latest.js" },
+  { name: "SixYin", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/sixyin/latest.js" },
+  { name: "XingHai", url: "https://raw.githubusercontent.com/pdone/lx-music-source/main/xinghai/latest.js" },
+];
+const loadLxMusic = async () => {
+  try { lxConfig.value = await yqFetchMusicConfig(); } catch { /* 引擎未就绪时用默认值 */ }
+  loadLxSources();
+};
+const loadLxSources = async () => {
+  try { lxSources.value = await yqFetchSources(); } catch { lxSources.value = []; }
+};
+const saveLxConfig = async () => {
+  lxSaving.value = true;
+  lxSaveMsg.value = "";
+  try {
+    await yqSaveMusicConfig(lxConfig.value);
+    lxSaveOk.value = true;
+    lxSaveMsg.value = "已保存，代理设置已同步给音乐引擎";
+  } catch (e) {
+    lxSaveOk.value = false;
+    lxSaveMsg.value = "保存失败：" + (e as Error).message;
+  } finally {
+    lxSaving.value = false;
+  }
+};
+const importLxSource = async (url?: string) => {
+  const u = (url || lxSourceUrl.value).trim();
+  if (!u) return;
+  lxImporting.value = true;
+  lxImportMsg.value = "正在导入…";
+  try {
+    lxSources.value = await yqImportSource(u);
+    const bad = lxSources.value.filter((s) => !s.ok);
+    lxImportMsg.value = bad.length ? "导入完成，但有脚本加载失败，见列表" : "导入成功";
+    if (!url) lxSourceUrl.value = "";
+  } catch (e) {
+    lxImportMsg.value = "导入失败：" + (e as Error).message;
+  } finally {
+    lxImporting.value = false;
+  }
+};
+const removeLxSource = async (id: string) => {
+  if (!confirm("删除这个音源脚本？")) return;
+  try { lxSources.value = await yqDeleteSource(id); } catch (e) { alert("删除失败：" + (e as Error).message); }
+};
+watch(activeTab, (tab) => { if (tab === "lucky-stun") loadLxMusic(); });
+
 const loadYunqiToken = async () => {
   tokenLoading.value = true;
   try {
@@ -4130,7 +4213,7 @@ watch(activeTab, (val) => {
             <!-- Music Widget Settings -->
             <div id="music-settings" class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6">
               <div class="flex items-center justify-between mb-4">
-                <h4 class="text-base font-bold text-gray-900">{{ $t('settings.extraSections.musicSettings') }}</h4>
+                <h4 class="text-base font-bold text-gray-900">🎵 音乐（LX 引擎）</h4>
                 <label class="relative inline-flex items-center cursor-pointer">
                   <input
                     type="checkbox"
@@ -4151,171 +4234,81 @@ watch(activeTab, (val) => {
                 </label>
               </div>
 
-              <div v-if="musicWidget && musicWidget.data" class="space-y-3 animate-fade-in">
-                <div>
-                  <label class="block text-xs font-bold text-gray-600 mb-1">{{ $t('settings.extraSections.apiAddress') }}</label>
-                  <input
-                    v-model="musicWidget.data.apiUrl"
-                    @change="store.markDirty()"
-                    class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
-                    :placeholder="$t('settings.extraSections.placeholderMusicApiUrl')"
-                  />
-                </div>
+              <div v-if="musicWidget" class="space-y-4 animate-fade-in">
+                <p class="text-xs text-gray-500">音乐引擎与云栖阁在同一个项目里运行：搜歌走引擎曲库，一次搜多家、界面上不分平台；播放地址只由下面导入的「音源脚本」解析。下载的歌会存到 NAS 的音乐目录。</p>
 
-                <div class="grid grid-cols-2 gap-3">
-                  <div>
-                    <label class="block text-xs font-bold text-gray-600 mb-1">{{ $t('settings.sections.username') }}</label>
-                    <input
-                      v-model="musicWidget.data.username"
-                      @change="store.markDirty()"
-                      type="text"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
-                      :placeholder="$t('settings.extraSections.placeholderUsername')"
-                      autocomplete="off"
-                    />
+                <!-- 代理与默认值 -->
+                <div class="bg-white border border-gray-200 rounded-lg p-3 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-bold text-gray-800">代理（音乐平台需要）</span>
+                    <input type="checkbox" v-model="lxConfig.proxyEnabled" class="w-4 h-4 accent-gray-900" />
                   </div>
-                  <div>
-                    <label class="block text-xs font-bold text-gray-600 mb-1">{{ $t('settings.sections.password') }}</label>
-                    <input
-                      v-model="musicWidget.data.password"
-                      @change="store.markDirty()"
-                      type="password"
-                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-gray-900 outline-none"
-                      :placeholder="$t('settings.extraSections.placeholderPassword')"
-                      autocomplete="new-password"
-                    />
+                  <div v-if="lxConfig.proxyEnabled" class="grid grid-cols-3 gap-2">
+                    <input v-model="lxConfig.proxyHost" placeholder="代理主机" class="col-span-2 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-900" />
+                    <input v-model.number="lxConfig.proxyPort" type="number" placeholder="端口" class="px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-900" />
                   </div>
-                </div>
-
-                <div class="flex items-center gap-2 mt-2">
-                  <button
-                    @click="testMusicAuth"
-                    class="px-3 py-1.5 bg-gray-900 hover:bg-gray-800 text-white text-xs rounded transition-colors flex items-center gap-1"
-                    :disabled="isTestingMusicAuth"
-                  >
-                    <span v-if="isTestingMusicAuth" class="animate-spin text-xs">●</span>
-                    {{ isTestingMusicAuth ? $t('settings.extraSections.loggingIn') : $t('settings.extraSections.loginAndTest') }}
+                  <div class="grid grid-cols-3 gap-2">
+                    <div class="col-span-1">
+                      <label class="block text-xs font-bold text-gray-600 mb-1">下载目录</label>
+                      <input v-model="lxConfig.downloadDir" placeholder="/downloads" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none" />
+                    </div>
+                    <div class="col-span-2 flex items-end">
+                      <span class="text-[11px] text-gray-500 leading-snug">填子目录名（比如「华语」）= 下载到 /vol1/1000/music-downloads/华语；以 / 开头则用容器内的绝对路径。</span>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1">默认音质</label>
+                      <select v-model="lxConfig.defaultQuality" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none">
+                        <option value="128k">128k</option>
+                        <option value="320k">320k</option>
+                        <option value="flac">FLAC</option>
+                        <option value="flac24bit">FLAC 24bit</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-bold text-gray-600 mb-1">默认模式</label>
+                      <select v-model="lxConfig.defaultMode" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none">
+                        <option value="play">只播放</option>
+                        <option value="playDownload">边播边下</option>
+                        <option value="download">只下载</option>
+                      </select>
+                    </div>
+                  </div>
+                  <button @click="saveLxConfig" :disabled="lxSaving" class="w-full bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-50">
+                    {{ lxSaving ? "保存中…" : "保存音乐设置" }}
                   </button>
-                  <span
-                    v-if="testMusicAuthResult"
-                    class="text-xs"
-                    :class="testMusicAuthResult.success ? 'text-gray-600' : 'text-gray-500'"
-                  >
-                    {{ testMusicAuthResult.message }}
-                  </span>
-                  <span class="text-[15px] text-gray-400"
-                    >{{ $t('settings.extraSections.musicSettingsTip') }}</span
-                  >
+                  <div v-if="lxSaveMsg" class="text-xs" :class="lxSaveOk ? 'text-green-600' : 'text-red-500'">{{ lxSaveMsg }}</div>
                 </div>
 
-                <div
-                  v-if="musicWidget.data.token"
-                  class="bg-white border border-gray-200 rounded-lg p-3"
-                >
-                  <div class="flex items-center gap-3">
-                    <img
-                      v-if="musicWidget.data.userProfile?.avatar"
-                      :src="getMusicAvatarUrl(musicWidget.data.userProfile.avatar)"
-                      class="w-10 h-10 rounded-full object-cover border border-gray-200 bg-white"
-                      alt="Avatar"
-                    />
-                    <div
-                      v-else
-                      class="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-gray-600 font-bold text-sm"
-                    >
-                      {{
-                        (
-                          musicWidget.data.userProfile?.displayName ||
-                          musicWidget.data.username ||
-                          "U"
-                        )
-                          .charAt(0)
-                          .toUpperCase()
-                      }}
-                    </div>
-
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-2">
-                        <span class="text-sm font-bold text-gray-900 truncate">
-                          {{
-                            musicWidget.data.userProfile?.displayName || musicWidget.data.username
-                          }}
-                        </span>
-                        <button
-                          @click="openRenameModal"
-                          class="text-xs text-gray-500 hover:text-gray-900 shrink-0"
-                          :disabled="isUpdatingProfile"
-                        >
-                          {{ $t('settings.extraSections.editProfile') }}
-                        </button>
-                      </div>
-                      <div class="text-[10px] text-gray-500 truncate">
-                        {{
-                          musicWidget.data.userProfile?.id
-                            ? `ID: ${musicWidget.data.userProfile.id}`
-                            : $t('settings.extraSections.notFetchedProfile')
-                        }}
-                      </div>
-                    </div>
-
-                    <button
-                      @click="
-                        () => {
-                          if (musicWidget && musicWidget.data) {
-                            musicWidget.data.token = '';
-                            musicWidget.data.userProfile = null;
-                            store.markDirty();
-                            testMusicAuthResult = null;
-                          }
-                        }
-                      "
-                      class="px-3 py-1.5 bg-gray-100 border border-gray-200 text-gray-600 rounded-lg text-xs font-bold hover:bg-gray-200 transition-colors"
-                    >
-                      {{ $t('settings.extraSections.logoutMusic') }}
-                    </button>
+                <!-- 音源脚本 -->
+                <div class="bg-white border border-gray-200 rounded-lg p-3 space-y-3">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-bold text-gray-800">音源脚本（决定能不能解析出播放地址）</span>
+                    <button @click="loadLxSources" class="text-xs text-gray-500 hover:text-gray-900">刷新</button>
                   </div>
-                </div>
-
-                <div>
-                  <label class="block text-xs font-bold text-gray-600 mb-2">{{ $t('settings.extraSections.componentSize') }}</label>
-                  <div class="flex items-center gap-4">
-                    <div class="flex gap-3">
-                      <label class="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="music-size"
-                          :checked="selectedMusicSize.cols === 1 && selectedMusicSize.rows === 1"
-                          @change="selectedMusicSize = { cols: 1, rows: 1 }"
-                          class="text-gray-900 accent-blue-400"
-                        />
-                        <span class="text-sm">{{ $t('settings.extraSections.mini') }}</span>
-                      </label>
-                      <label class="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="music-size"
-                          :checked="selectedMusicSize.cols === 2 && selectedMusicSize.rows === 3"
-                          @change="selectedMusicSize = { cols: 2, rows: 3 }"
-                          class="text-gray-900 accent-blue-400"
-                        />
-                        <span class="text-sm">{{ $t('settings.extraSections.standard') }}</span>
-                      </label>
-                    </div>
-                    <button
-                      v-if="
-                        musicWidget.colSpan !== selectedMusicSize.cols ||
-                        musicWidget.rowSpan !== selectedMusicSize.rows
-                      "
-                      @click="setMusicSize(selectedMusicSize.cols, selectedMusicSize.rows)"
-                      class="px-3 py-1 bg-gray-900 text-white text-xs rounded hover:bg-gray-800 transition-colors animate-fade-in"
-                    >
-                      确定
-                    </button>
+                  <div v-if="!lxSources.length" class="text-xs text-gray-400">还没有导入音源。把下面任意一个点「导入」即可，多个都导入会自动轮换使用。</div>
+                  <div v-for="s in lxSources" :key="s.id" class="flex items-center gap-2 text-xs border border-gray-100 rounded-lg px-2 py-2">
+                    <span class="flex-1 min-w-0">
+                      <span class="font-bold text-gray-800">{{ s.name || s.id }}</span>
+                      <span class="text-gray-400 ml-1">{{ s.version || "" }}</span>
+                      <span class="block text-gray-400 truncate">{{ s.ok ? '支持：' + Object.keys(s.sources || {}).join('、') : '加载失败：' + (s.error || '') }}</span>
+                    </span>
+                    <span :class="s.ok ? 'text-green-600' : 'text-red-500'">{{ s.ok ? "可用" : "失败" }}</span>
+                    <button @click="removeLxSource(s.id)" class="px-2 py-1 rounded bg-red-50 text-red-600 border border-red-200 font-bold">删除</button>
                   </div>
+                  <div class="flex gap-2">
+                    <input v-model="lxSourceUrl" placeholder="粘贴音源脚本的链接（.js）" class="flex-1 min-w-0 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-900" />
+                    <button @click="importLxSource()" :disabled="lxImporting || !lxSourceUrl" class="px-3 py-2 rounded-lg bg-gray-900 text-white text-sm font-bold disabled:opacity-50">导入</button>
+                  </div>
+                  <div>
+                    <div class="text-xs font-bold text-gray-600 mb-1">常用音源（点导入）</div>
+                    <div class="flex flex-wrap gap-1.5">
+                      <button v-for="p in lxPresetSources" :key="p.name" @click="importLxSource(p.url)" :disabled="lxImporting" class="px-2 py-1 rounded-full bg-gray-100 hover:bg-gray-200 text-xs text-gray-700 disabled:opacity-50">{{ p.name }}</button>
+                    </div>
+                  </div>
+                  <div v-if="lxImportMsg" class="text-xs text-gray-500">{{ lxImportMsg }}</div>
                 </div>
               </div>
             </div>
-
             <!-- Custom CSS Section -->
             <div class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6">
               <h4 class="text-base font-bold mb-4 text-gray-900">{{ $t('settings.extraSections.customCss') }}</h4>
