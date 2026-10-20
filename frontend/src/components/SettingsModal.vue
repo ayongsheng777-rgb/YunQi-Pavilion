@@ -4214,27 +4214,10 @@ watch(activeTab, (val) => {
             <div id="music-settings" class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6">
               <div class="flex items-center justify-between mb-4">
                 <h4 class="text-base font-bold text-gray-900">🎵 音乐（LX 引擎）</h4>
-                <label class="relative inline-flex items-center cursor-pointer">
-                  <input
-                    type="checkbox"
-                    :checked="!!musicWidget"
-                    @change="
-                      (e) => {
-                        if ((e.target as HTMLInputElement).checked) addMusicWidget();
-                        else if (musicWidget) {
-                          removeWidget(musicWidget.id);
-                        }
-                      }
-                    "
-                    class="sr-only peer"
-                  />
-                  <div
-                    class="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"
-                  ></div>
-                </label>
+
               </div>
 
-              <div v-if="musicWidget" class="space-y-4 animate-fade-in">
+              <div class="space-y-4 animate-fade-in">
                 <p class="text-xs text-gray-500">音乐引擎与云栖阁在同一个项目里运行：搜歌走引擎曲库，一次搜多家、界面上不分平台；播放地址只由下面导入的「音源脚本」解析。下载的歌会存到 NAS 的音乐目录。</p>
 
                 <!-- 代理与默认值 -->
@@ -4253,7 +4236,7 @@ watch(activeTab, (val) => {
                       <input v-model="lxConfig.downloadDir" placeholder="/downloads" class="w-full px-2 py-2 border border-gray-200 rounded-lg text-sm outline-none" />
                     </div>
                     <div class="col-span-2 flex items-end">
-                      <span class="text-[11px] text-gray-500 leading-snug">填子目录名（比如「华语」）= 下载到 /vol1/1000/music-downloads/华语；以 / 开头则用容器内的绝对路径。</span>
+                      <span class="text-[11px] text-gray-500 leading-snug">支持任意磁盘：填 vol1/... 或 vol2/... 开头的路径（如 vol2/1000/音乐）下到对应盘；只填名字（如「华语」）= 音乐文件夹 /vol1/1000/music-downloads 下的子目录。</span>
                     </div>
                     <div>
                       <label class="block text-xs font-bold text-gray-600 mb-1">默认音质</label>

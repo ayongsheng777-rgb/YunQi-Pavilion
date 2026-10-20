@@ -65,7 +65,6 @@ import { trackCheckinOpen } from "@/utils/checkin";
 const MemoWidget = loadAsync(() => import("./MemoWidget.vue"));
 const TodoWidget = loadAsync(() => import("./TodoWidget.vue"));
 const CalculatorWidget = loadAsync(() => import("./CalculatorWidget.vue"));
-const MusicWidget = loadAsync(() => import("./MusicWidget.vue"));
 const MiniPlayer = loadAsync(() => import("./MiniPlayer.vue"));
 const HotWidget = loadAsync(() => import("./HotWidget.vue"));
 const ClockWeatherWidget = loadAsync(() => import("./ClockWeatherWidget.vue"));
@@ -96,7 +95,6 @@ const gridWidgetTypes = new Set([
   "calendar",
   "memo",
   "todo",
-  "music",
   "calculator",
   "ip",
   "div-card",
@@ -3362,7 +3360,6 @@ onUnmounted(() => {
             <CalendarWidget v-else-if="widget.type === 'calendar'" :widget="widget" />
             <MemoWidget v-else-if="widget.type === 'memo'" :widget="widget" />
             <TodoWidget v-else-if="widget.type === 'todo'" :widget="widget" />
-            <MusicWidget v-else-if="widget.type === 'music'" :widget="widget" />
             <CalculatorWidget v-else-if="widget.type === 'calculator'" />
             <div
               v-else-if="widget.type === 'div-card'"

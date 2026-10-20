@@ -311,12 +311,19 @@ func runDownload(cfg MusicConfig, task *DownloadTask, source string, musicInfo m
 		fail(msg)
 		return
 	}
-	// 2. 下载到 NAS 目录（设置里填相对名 = /downloads 下的子目录；绝对路径原样用）
-	downloadDir := cfg.DownloadDir
-	if downloadDir == "" {
+	// 2. 下载到 NAS 目录。设置里的写法：
+	//   空 = /downloads；vol1/... 或 vol2/... 开头 = 对应磁盘下的任意路径；
+	//   以 / 开头 = 容器内绝对路径原样用；只填名字 = /downloads 下的子目录。
+	downloadDir := strings.TrimSpace(cfg.DownloadDir)
+	switch {
+	case downloadDir == "":
 		downloadDir = "/downloads"
-	}
-	if !filepath.IsAbs(downloadDir) {
+	case downloadDir == "vol1" || downloadDir == "vol2" ||
+		strings.HasPrefix(downloadDir, "vol1/") || strings.HasPrefix(downloadDir, "vol2/"):
+		downloadDir = filepath.Join("/nas", downloadDir)
+	case filepath.IsAbs(downloadDir):
+		// 原样用
+	default:
 		downloadDir = filepath.Join("/downloads", downloadDir)
 	}
 	if err := os.MkdirAll(downloadDir, 0755); err != nil {
