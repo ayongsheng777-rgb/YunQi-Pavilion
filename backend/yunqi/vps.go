@@ -28,7 +28,6 @@ import (
 )
 
 const vpsProxyURL = "http://192.168.57.228:7890" // J4125 sing-box，与音乐/AI 共用
-const vpsPollInterval = 20 * time.Second
 
 type VpsNode struct {
 	ID       string `json:"id"`
@@ -39,7 +38,33 @@ type VpsNode struct {
 }
 
 type vpsConfigFile struct {
-	Nodes []VpsNode `json:"nodes"`
+	Nodes       []VpsNode `json:"nodes"`
+	IntervalSec int       `json:"intervalSec,omitempty"`
+}
+
+const (
+	vpsDefaultIntervalSec = 20
+	vpsMinIntervalSec     = 10
+	vpsMaxIntervalSec     = 600
+)
+
+func clampVpsInterval(sec int) int {
+	if sec < vpsMinIntervalSec {
+		return vpsMinIntervalSec
+	}
+	if sec > vpsMaxIntervalSec {
+		return vpsMaxIntervalSec
+	}
+	return sec
+}
+
+// vpsIntervalSec 当前生效的探测周期（秒）：读配置，非法值回默认
+func vpsIntervalSec() int {
+	cfg := loadVpsConfig()
+	if cfg.IntervalSec <= 0 {
+		return vpsDefaultIntervalSec
+	}
+	return clampVpsInterval(cfg.IntervalSec)
 }
 
 type VpsContainer struct {
@@ -93,25 +118,35 @@ type vpsNetSample struct {
 
 func vpsNodesPath() string { return filepath.Join(YunqiDir(), "vps_nodes.json") }
 
-func loadVpsNodes() []VpsNode {
+func loadVpsConfig() vpsConfigFile {
 	raw, err := os.ReadFile(vpsNodesPath())
 	if err != nil {
-		return nil
+		return vpsConfigFile{}
 	}
 	var cfg vpsConfigFile
 	if err := json.Unmarshal(raw, &cfg); err != nil {
-		return nil
+		return vpsConfigFile{}
 	}
-	return cfg.Nodes
+	return cfg
 }
 
-func saveVpsNodes(nodes []VpsNode) error {
-	cfg := vpsConfigFile{Nodes: nodes}
+func loadVpsNodes() []VpsNode {
+	return loadVpsConfig().Nodes
+}
+
+func saveVpsConfig(cfg vpsConfigFile) error {
 	raw, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(vpsNodesPath(), raw, 0o600)
+}
+
+// saveVpsNodes 保存节点列表，保留已有的探测周期设置
+func saveVpsNodes(nodes []VpsNode) error {
+	cfg := loadVpsConfig()
+	cfg.Nodes = nodes
+	return saveVpsConfig(cfg)
 }
 
 func normalizePanelBase(raw string) string {
@@ -361,7 +396,7 @@ func StartVpsCollector() {
 				vpsStatuses[node.ID] = st
 				vpsMu.Unlock()
 			}
-			time.Sleep(vpsPollInterval)
+			time.Sleep(time.Duration(vpsIntervalSec()) * time.Second)
 		}
 	}()
 }
@@ -381,7 +416,7 @@ func VpsGetStatus(c *gin.Context) {
 	}
 	vpsMu.RUnlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-	c.JSON(http.StatusOK, gin.H{"success": true, "nodes": out})
+	c.JSON(http.StatusOK, gin.H{"success": true, "nodes": out, "intervalSec": vpsIntervalSec()})
 }
 
 type vpsNodeView struct {
@@ -398,12 +433,13 @@ func VpsListNodes(c *gin.Context) {
 	for _, n := range nodes {
 		views = append(views, vpsNodeView{ID: n.ID, Name: n.Name, BaseURL: n.BaseURL, UseProxy: n.UseProxy, HasKey: n.APIKey != ""})
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "nodes": views})
+	c.JSON(http.StatusOK, gin.H{"success": true, "nodes": views, "intervalSec": vpsIntervalSec()})
 }
 
 func VpsSaveNodes(c *gin.Context) {
 	var body struct {
-		Nodes []VpsNode `json:"nodes"`
+		Nodes       []VpsNode `json:"nodes"`
+		IntervalSec *int      `json:"intervalSec"`
 	}
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"success": false, "error": "参数错误"})
@@ -430,11 +466,16 @@ func VpsSaveNodes(c *gin.Context) {
 		}
 		out = append(out, n)
 	}
-	if err := saveVpsNodes(out); err != nil {
+	cfg := loadVpsConfig()
+	cfg.Nodes = out
+	if body.IntervalSec != nil {
+		cfg.IntervalSec = clampVpsInterval(*body.IntervalSec)
+	}
+	if err := saveVpsConfig(cfg); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"success": false, "error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"success": true, "count": len(out)})
+	c.JSON(http.StatusOK, gin.H{"success": true, "count": len(out), "intervalSec": vpsIntervalSec()})
 }
 
 func VpsDeleteNode(c *gin.Context) {

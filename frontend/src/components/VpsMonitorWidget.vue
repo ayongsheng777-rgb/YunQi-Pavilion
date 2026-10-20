@@ -22,6 +22,12 @@ const nodes = ref<VpsNodeStatus[]>([]);
 const loaded = ref(false);
 const loadError = ref("");
 let timer: ReturnType<typeof setInterval> | null = null;
+let pollMs = 20000;
+
+const startTimer = () => {
+  if (timer) clearInterval(timer);
+  timer = setInterval(reload, pollMs);
+};
 
 const heightNow = computed(() => props.widget.h ?? props.widget.rowSpan ?? 1);
 const isMicro = computed(() => heightNow.value <= 0.5);
@@ -47,6 +53,12 @@ const reload = async () => {
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const j = await resp.json();
     nodes.value = (j.nodes ?? []) as VpsNodeStatus[];
+    // 跟随服务端探测周期刷新（设置页可调）
+    const iv = typeof j.intervalSec === "number" ? j.intervalSec * 1000 : 0;
+    if (iv >= 10000 && iv <= 600000 && iv !== pollMs) {
+      pollMs = iv;
+      startTimer();
+    }
     loadError.value = "";
   } catch (e) {
     loadError.value = e instanceof Error ? e.message : "加载失败";
@@ -57,7 +69,7 @@ const reload = async () => {
 
 onMounted(() => {
   void reload();
-  timer = setInterval(reload, 20000);
+  startTimer();
 });
 onUnmounted(() => { if (timer) clearInterval(timer); });
 

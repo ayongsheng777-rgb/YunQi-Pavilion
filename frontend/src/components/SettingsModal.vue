@@ -1011,6 +1011,7 @@ const removeLxSource = async (id: string) => {
 // ===== VPS 监控（1Panel 接口采集） =====
 interface YqVpsNode { id: string; name: string; baseUrl: string; apiKey: string; useProxy: boolean; hasKey?: boolean }
 const vpsNodes = ref<YqVpsNode[]>([]);
+const vpsIntervalSec = ref(20);
 const vpsSaving = ref(false);
 const vpsSaveMsg = ref("");
 const vpsSaveOk = ref(true);
@@ -1022,6 +1023,7 @@ const loadVpsNodes = async () => {
     if (res.ok) {
       const j = await res.json();
       vpsNodes.value = (j.nodes || []).map((n: Record<string, unknown>) => ({ ...n, apiKey: "" })) as YqVpsNode[];
+      if (typeof j.intervalSec === "number" && j.intervalSec > 0) vpsIntervalSec.value = j.intervalSec;
     }
   } catch { /* 后端未就绪时静默 */ }
 };
@@ -1035,7 +1037,7 @@ const saveVpsNodes = async () => {
     const res = await fetch("/api/vps/nodes", {
       method: "POST",
       headers: { ...store.getHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ nodes: vpsNodes.value }),
+      body: JSON.stringify({ nodes: vpsNodes.value, intervalSec: Math.min(600, Math.max(10, Math.round(vpsIntervalSec.value) || 20)) }),
     });
     const j = await res.json().catch(() => ({}));
     if (!res.ok || !j.success) throw new Error(j.error || "保存失败");
@@ -4439,6 +4441,15 @@ watch(activeTab, (val) => {
                   <div v-if="vpsTestMsg[n.id]" class="text-xs" :class="vpsTestMsg[n.id].startsWith('连接成功') ? 'text-green-600' : 'text-red-500'">{{ vpsTestMsg[n.id] }}</div>
                 </div>
                 <div v-if="!vpsNodes.length" class="text-xs text-gray-400">还没有节点，点下面「添加节点」开始。</div>
+                <div class="bg-white border border-gray-200 rounded-lg p-3">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-sm font-bold text-gray-700">探测周期</span>
+                    <input v-model.number="vpsIntervalSec" type="number" min="10" max="600" step="5" class="w-20 px-2 py-1.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-900" />
+                    <span class="text-xs text-gray-500">秒（10–600）</span>
+                    <button v-for="p in [10, 20, 30, 60, 120, 300]" :key="p" @click="vpsIntervalSec = p" class="px-2 py-1 rounded-md border text-xs font-bold" :class="vpsIntervalSec === p ? 'bg-gray-900 text-white border-gray-900' : 'bg-white text-gray-600 border-gray-300 hover:border-gray-500'">{{ p }}秒</button>
+                  </div>
+                  <p class="text-xs text-gray-400 mt-1.5">每隔多久把所有 VPS 采集一遍，首页组件跟着同节奏刷新。改完点下面「保存节点设置」生效。太频繁会给面板和代理添负担，一般 20–60 秒就够。</p>
+                </div>
                 <div class="flex gap-2">
                   <button @click="addVpsNodeRow" class="px-3 py-2 rounded-lg bg-white border border-gray-300 text-sm font-bold text-gray-700">＋ 添加节点</button>
                   <button @click="saveVpsNodes" :disabled="vpsSaving" class="flex-1 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-50">{{ vpsSaving ? "保存中…" : "保存节点设置" }}</button>
