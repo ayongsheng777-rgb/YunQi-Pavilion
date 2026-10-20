@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -68,6 +69,9 @@ type VpsNodeStatus struct {
 	UptimeSec         int64          `json:"uptimeSec"`
 	NetUpRate         float64        `json:"netUpRate"`   // bytes/s
 	NetDownRate       float64        `json:"netDownRate"` // bytes/s
+	SSHLogAvailable   bool           `json:"sshLogAvailable"`
+	SSHFailed24h      int            `json:"sshFailed24h"`
+	SSHLastIP         string         `json:"sshLastIp"`
 	Containers        []VpsContainer `json:"containers"`
 	ContainersRunning int            `json:"containersRunning"`
 	ContainersTotal   int            `json:"containersTotal"`
@@ -283,6 +287,27 @@ func fetchNodeStatus(node VpsNode, prev *VpsNodeStatus) *VpsNodeStatus {
 		}
 	}
 
+	// SSH 爆破日志（经 1Panel 文件接口读 /var/log/auth.log，约 5 分钟一次）
+	if sshDue(node.ID) {
+		if cnt, lastIP, ok := fetchSSHLog(node); ok {
+			st.SSHLogAvailable = true
+			st.SSHFailed24h = cnt
+			st.SSHLastIP = lastIP
+			vpsMu.Lock()
+			vpsSSHCache[node.ID] = sshEntry{at: time.Now(), failed: cnt, lastIP: lastIP, ok: true}
+			vpsMu.Unlock()
+		} else {
+			vpsMu.Lock()
+			vpsSSHCache[node.ID] = sshEntry{at: time.Now(), ok: false}
+			vpsMu.Unlock()
+			if prev != nil { // 一次失败不清掉已有数据
+				st.SSHLogAvailable, st.SSHFailed24h, st.SSHLastIP = prev.SSHLogAvailable, prev.SSHFailed24h, prev.SSHLastIP
+			}
+		}
+	} else if prev != nil {
+		st.SSHLogAvailable, st.SSHFailed24h, st.SSHLastIP = prev.SSHLogAvailable, prev.SSHFailed24h, prev.SSHLastIP
+	}
+
 	// 容器列表
 	if _, raw3, _, err3 := panelCallAuto(node, "POST", "/api/v2/containers/search", map[string]any{
 		"page": 1, "pageSize": 100, "name": "", "state": "all", "orderBy": "name", "order": "descending",
@@ -471,4 +496,97 @@ func VpsTestNode(c *gin.Context) {
 		"cpuPercent": st.CPUPercent, "memPercent": st.MemPercent,
 		"containers": st.ContainersTotal,
 	})
+}
+
+// ---- SSH 爆破日志（经 1Panel 文件接口读取系统 auth.log） ----
+// 注意：新系统若只有 journald、没装 rsyslog，就没有 /var/log/auth.log 文件，
+// 此时读不到属正常（SSHLogAvailable=false），装上 rsyslog 后自动生效。
+
+type sshEntry struct {
+	at     time.Time
+	failed int
+	lastIP string
+	ok     bool
+}
+
+var vpsSSHCache = map[string]sshEntry{}
+
+func sshDue(id string) bool {
+	vpsMu.RLock()
+	e, ok := vpsSSHCache[id]
+	vpsMu.RUnlock()
+	return !ok || time.Since(e.at) > 4*time.Minute
+}
+
+var (
+	sshIPRe   = regexp.MustCompile(`from (\d+\.\d+\.\d+\.\d+)`)
+	sshTimeRe = regexp.MustCompile(`^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})`)
+	sshSysRe  = regexp.MustCompile(`^(\w{3})\s+(\d{1,2}) (\d{2}:\d{2}:\d{2})`)
+)
+
+func parseSSHLineTime(line string, now time.Time) (time.Time, bool) {
+	if m := sshTimeRe.FindStringSubmatch(line); m != nil {
+		t, err := time.ParseInLocation("2006-01-02 15:04:05", m[1]+" "+m[2], now.Location())
+		return t, err == nil
+	}
+	if m := sshSysRe.FindStringSubmatch(line); m != nil {
+		t, err := time.ParseInLocation("Jan 2 15:04:05 2006", fmt.Sprintf("%s %s %s %d", m[1], m[2], m[3], now.Year()), now.Location())
+		if err == nil {
+			if t.After(now.Add(24 * time.Hour)) {
+				t = t.AddDate(-1, 0, 0) // 年初读到去年底的日志
+			}
+			return t, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func fetchSSHLog(node VpsNode) (int, string, bool) {
+	for _, path := range []string{"/var/log/auth.log", "/var/log/secure"} {
+		_, raw, _, err := panelCallAuto(node, "POST", "/api/v2/files/check", map[string]any{"path": path})
+		if err != nil {
+			continue
+		}
+		var chk panelResp
+		if json.Unmarshal(raw, &chk) != nil || chk.Code != 200 || string(chk.Data) != "true" {
+			continue
+		}
+		_, raw2, _, err := panelCallAuto(node, "POST", "/api/v2/files/read", map[string]any{"path": path})
+		if err != nil {
+			continue
+		}
+		var rd panelResp
+		if json.Unmarshal(raw2, &rd) != nil || rd.Code != 200 {
+			continue
+		}
+		var content string
+		var fileData struct {
+			Content string `json:"content"`
+		}
+		if json.Unmarshal(rd.Data, &fileData) == nil && fileData.Content != "" {
+			content = fileData.Content
+		} else if json.Unmarshal(rd.Data, &content) != nil {
+			continue
+		}
+		if len(content) > 3<<20 {
+			content = content[len(content)-(3<<20):]
+		}
+		now := time.Now()
+		count := 0
+		lastIP := ""
+		for _, line := range strings.Split(content, "\n") {
+			if !strings.Contains(line, "Failed password") {
+				continue
+			}
+			if t, ok := parseSSHLineTime(line, now); ok && now.Sub(t) > 24*time.Hour {
+				continue
+			}
+			count++
+			if m := sshIPRe.FindStringSubmatch(line); m != nil {
+				lastIP = m[1]
+			}
+		}
+		return count, lastIP, true
+	}
+	return 0, "", false
 }

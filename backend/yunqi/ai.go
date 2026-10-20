@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/url"
+	neturl "net/url"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -49,6 +49,7 @@ var aiProviderPresets = []aiProviderPreset{
 	{Name: "硅基流动", BaseURL: "https://api.siliconflow.cn/v1", Model: "Qwen/Qwen2.5-7B-Instruct", NeedKey: true, KeyURL: "https://cloud.siliconflow.cn/account/ak", Homepage: "https://cloud.siliconflow.cn"},
 	{Name: "魔搭 ModelScope", BaseURL: "https://api-inference.modelscope.cn/v1", Model: "Qwen/Qwen2.5-7B-Instruct", NeedKey: true, KeyURL: "https://modelscope.cn/my/myaccesstoken", Homepage: "https://modelscope.cn"},
 	{Name: "零一万物", BaseURL: "https://api.lingyiwanwu.com/v1", Model: "yi-lightning", NeedKey: true, KeyURL: "https://platform.lingyiwanwu.com", Homepage: "https://platform.lingyiwanwu.com"},
+	{Name: "MiniMax", BaseURL: "https://api.minimax.io/v1", Model: "MiniMax-M3.1-Flash", NeedKey: true, KeyURL: "https://platform.minimax.io", Homepage: "https://platform.minimax.io"},
 	{Name: "OpenRouter", BaseURL: "https://openrouter.ai/api/v1", Model: "deepseek/deepseek-chat", NeedKey: true, KeyURL: "https://openrouter.ai/keys", Homepage: "https://openrouter.ai"},
 	{Name: "GroqCloud", BaseURL: "https://api.groq.com/openai/v1", Model: "llama-3.3-70b-versatile", NeedKey: true, KeyURL: "https://console.groq.com/keys", Homepage: "https://console.groq.com"},
 	{Name: "Google AI Studio", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai", Model: "gemini-2.0-flash", NeedKey: true, KeyURL: "https://aistudio.google.com/apikey", Homepage: "https://aistudio.google.com"},
@@ -181,6 +182,13 @@ type aiToolDef struct {
 
 func aiFunctionTools() []aiToolDef {
 	mk := func(name, desc string, props map[string]interface{}, required []string) aiToolDef {
+		// DeepSeek 等严格校验的平台要求 required 必须是数组：Go 的 nil 切片会序列化成 null 被直接拒收
+		if required == nil {
+			required = []string{}
+		}
+		if props == nil {
+			props = map[string]interface{}{}
+		}
 		t := aiToolDef{Type: "function"}
 		t.Function.Name = name
 		t.Function.Description = desc
@@ -260,7 +268,7 @@ func aiPostChatCompletions(ctx context.Context, cfg aiConfig, payload map[string
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	transport := &http.Transport{}
 	if cfg.ProxyEnabled && strings.TrimSpace(cfg.ProxyURL) != "" {
-		if proxyURL, err := url.Parse(strings.TrimSpace(cfg.ProxyURL)); err == nil {
+		if proxyURL, err := neturl.Parse(strings.TrimSpace(cfg.ProxyURL)); err == nil {
 			transport.Proxy = http.ProxyURL(proxyURL)
 		}
 	}

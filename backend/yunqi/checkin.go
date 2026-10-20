@@ -37,17 +37,18 @@ type checkinRecords struct {
 	Dates map[string]map[string][]string `json:"dates"`
 }
 
-var (
-	checkinMu       sync.Mutex
-	checkinFile     = filepath.Join(YunqiDir(), "checkin.json")
-	checkinRecordFn = filepath.Join(YunqiDir(), "checkin_records.json")
-)
+var checkinMu sync.Mutex
+
+// 路径必须在使用时现算：包级变量在 config.Init() 之前求值，那时 DataDir 还是空的，
+// 算出的相对路径会写进容器临时层，重建容器就全丢（已踩过这个坑）。
+func checkinFilePath() string     { return filepath.Join(YunqiDir(), "checkin.json") }
+func checkinRecordFnPath() string { return filepath.Join(YunqiDir(), "checkin_records.json") }
 
 func todayStr() string { return time.Now().Format("2006-01-02") }
 
 func loadCheckinStore() checkinStore {
 	var st checkinStore
-	_ = utils.ReadJSON(checkinFile, &st)
+	_ = utils.ReadJSON(checkinFilePath(), &st)
 	if st.Sites == nil {
 		st.Sites = map[string][]CheckinSite{}
 	}
@@ -55,12 +56,12 @@ func loadCheckinStore() checkinStore {
 }
 
 func saveCheckinStore(st checkinStore) error {
-	return utils.WriteJSON(checkinFile, st)
+	return utils.WriteJSON(checkinFilePath(), st)
 }
 
 func loadCheckinRecords() checkinRecords {
 	var rc checkinRecords
-	_ = utils.ReadJSON(checkinRecordFn, &rc)
+	_ = utils.ReadJSON(checkinRecordFnPath(), &rc)
 	if rc.Dates == nil {
 		rc.Dates = map[string]map[string][]string{}
 	}
@@ -68,7 +69,7 @@ func loadCheckinRecords() checkinRecords {
 }
 
 func saveCheckinRecords(rc checkinRecords) error {
-	return utils.WriteJSON(checkinRecordFn, rc)
+	return utils.WriteJSON(checkinRecordFnPath(), rc)
 }
 
 func checkinHasDone(list []string, siteID string) bool {
