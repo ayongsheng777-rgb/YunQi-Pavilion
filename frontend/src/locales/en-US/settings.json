@@ -322,7 +322,8 @@
     "countup": "Count Up",
     "iframe": "Iframe",
     "player": "Music Player",
-    "group": "Group"
+    "group": "Group",
+    "vps-monitor": "VPS Monitor"
   },
   "widgetAbbr": {
     "clock": "Clk",

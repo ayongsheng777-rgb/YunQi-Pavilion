@@ -323,7 +323,8 @@
     "iframe": "内嵌页面",
     "player": "音乐播放器",
     "group": "分组",
-    "itdaily": "IT&AI 日报"
+    "itdaily": "IT&AI 日报",
+    "vps-monitor": "VPS 监控"
   },
   "widgetAbbr": {
     "clock": "时",

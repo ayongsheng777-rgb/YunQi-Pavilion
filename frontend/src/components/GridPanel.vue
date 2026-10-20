@@ -60,6 +60,7 @@ import LoginModal from "./LoginModal.vue";
 const BookmarkWidget = loadAsync(() => import("./BookmarkWidget.vue"));
 const CheckinWidget = loadAsync(() => import("./CheckinWidget.vue"));
 const ITDailyWidget = loadAsync(() => import("./ITDailyWidget.vue"));
+const VpsMonitorWidget = loadAsync(() => import("./VpsMonitorWidget.vue"));
 import CheckinBell from "./CheckinBell.vue";
 import { trackCheckinOpen } from "@/utils/checkin";
 const MemoWidget = loadAsync(() => import("./MemoWidget.vue"));
@@ -104,6 +105,7 @@ const gridWidgetTypes = new Set([
   "bookmarks",
   "checkin",
   "itdaily",
+  "vps-monitor",
   "hot",
   "clockweather",
   "amap-weather",
@@ -1112,8 +1114,13 @@ const handleSizeSelect = (widget: GridLayoutItem, size: { colSpan: number; rowSp
   const maxRows = 4;
   const min = 0.5;
   const normalize = (value: number) => Math.round(value * 2) / 2;
-  const nextW = Math.min(Math.max(normalize(size.colSpan), min), maxCols);
-  const nextH = Math.min(Math.max(normalize(size.rowSpan), min), maxRows);
+  let nextW = Math.min(Math.max(normalize(size.colSpan), min), maxCols);
+  let nextH = Math.min(Math.max(normalize(size.rowSpan), min), maxRows);
+  // VPS 监控组件最小 4x1（内容需要横向空间；移动端网格只有 2 列则取满宽）
+  if ((widget as WidgetConfig).type === "vps-monitor") {
+    nextW = Math.max(nextW, Math.min(4, maxCols));
+    nextH = Math.max(nextH, 1);
+  }
 
   widget.w = nextW;
   widget.h = nextH;
@@ -3514,6 +3521,7 @@ onUnmounted(() => {
             <BookmarkWidget v-else-if="widget.type === 'bookmarks'" :widget="widget" />
             <CheckinWidget v-else-if="widget.type === 'checkin'" :widget="widget" />
             <ITDailyWidget v-else-if="widget.type === 'itdaily'" :widget="widget" />
+            <VpsMonitorWidget v-else-if="widget.type === 'vps-monitor'" :widget="widget" />
             <HotWidget v-else-if="widget.type === 'hot'" :widget="widget" :is-edit-mode="isEditMode" />
             <ClockWeatherWidget v-else-if="widget.type === 'clockweather'" :widget="widget" />
             <AmapWeatherWidget v-else-if="widget.type === 'amap-weather'" :widget="widget" />

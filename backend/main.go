@@ -105,6 +105,7 @@ func main() {
 	gin.SetMode(gin.ReleaseMode)
 	config.Init()
 	yunqi.Init() // 云栖阁扩展：建数据目录、生成 OpenAPI token
+	yunqi.StartVpsCollector() // VPS 监控：后台轮询各节点 1Panel 接口
 	handlers.InitWidgetCache()
 	handlers.InitGeocodingCache()
 	handlers.InitDocker()
@@ -452,6 +453,17 @@ func main() {
 		music.GET("/playlist/lyric", yunqi.MusicPlaylistLyric)
 		music.POST("/playlist/delete", yunqi.MusicPlaylistDelete)
 		music.GET("/stream", yunqi.MusicStream)
+	}
+
+	// 模块 1d：VPS 监控（经各 VPS 的 1Panel 接口采集，JWT 鉴权）
+	vps := api.Group("/vps")
+	vps.Use(middleware.AuthMiddleware())
+	{
+		vps.GET("/status", yunqi.VpsGetStatus)
+		vps.GET("/nodes", yunqi.VpsListNodes)
+		vps.POST("/nodes", yunqi.VpsSaveNodes)
+		vps.POST("/nodes/delete", yunqi.VpsDeleteNode)
+		vps.POST("/nodes/test", yunqi.VpsTestNode)
 	}
 
 	// 模块 4：AI（JWT 鉴权）

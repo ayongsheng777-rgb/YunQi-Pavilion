@@ -1008,7 +1008,106 @@ const removeLxSource = async (id: string) => {
   if (!confirm("删除这个音源脚本？")) return;
   try { lxSources.value = await yqDeleteSource(id); } catch (e) { alert("删除失败：" + (e as Error).message); }
 };
-watch(activeTab, (tab) => { if (tab === "lucky-stun") loadLxMusic(); });
+// ===== VPS 监控（1Panel 接口采集） =====
+interface YqVpsNode { id: string; name: string; baseUrl: string; apiKey: string; useProxy: boolean; hasKey?: boolean }
+const vpsNodes = ref<YqVpsNode[]>([]);
+const vpsSaving = ref(false);
+const vpsSaveMsg = ref("");
+const vpsSaveOk = ref(true);
+const vpsTestMsg = ref<Record<string, string>>({});
+const vpsTestingId = ref("");
+const loadVpsNodes = async () => {
+  try {
+    const res = await fetch("/api/vps/nodes", { headers: store.getHeaders() });
+    if (res.ok) {
+      const j = await res.json();
+      vpsNodes.value = (j.nodes || []).map((n: Record<string, unknown>) => ({ ...n, apiKey: "" })) as YqVpsNode[];
+    }
+  } catch { /* 后端未就绪时静默 */ }
+};
+const addVpsNodeRow = () => {
+  vpsNodes.value.push({ id: "vps-" + Date.now(), name: "", baseUrl: "", apiKey: "", useProxy: true });
+};
+const saveVpsNodes = async () => {
+  vpsSaving.value = true;
+  vpsSaveMsg.value = "";
+  try {
+    const res = await fetch("/api/vps/nodes", {
+      method: "POST",
+      headers: { ...store.getHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ nodes: vpsNodes.value }),
+    });
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok || !j.success) throw new Error(j.error || "保存失败");
+    vpsSaveOk.value = true;
+    vpsSaveMsg.value = `已保存 ${j.count} 个节点，采集已按新配置进行`;
+    await loadVpsNodes();
+  } catch (e) {
+    vpsSaveOk.value = false;
+    vpsSaveMsg.value = "保存失败：" + (e as Error).message;
+  } finally {
+    vpsSaving.value = false;
+  }
+};
+const deleteVpsNode = async (n: YqVpsNode) => {
+  if (!confirm(`删除节点「${n.name || n.baseUrl}」？`)) return;
+  try {
+    await fetch("/api/vps/nodes/delete", {
+      method: "POST",
+      headers: { ...store.getHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: n.id }),
+    });
+    await loadVpsNodes();
+  } catch (e) {
+    alert("删除失败：" + (e as Error).message);
+  }
+};
+const testVpsNode = async (n: YqVpsNode) => {
+  vpsTestingId.value = n.id;
+  vpsTestMsg.value = { ...vpsTestMsg.value, [n.id]: "正在连接…" };
+  try {
+    const res = await fetch("/api/vps/nodes/test", {
+      method: "POST",
+      headers: { ...store.getHeaders(), "Content-Type": "application/json" },
+      body: JSON.stringify({ id: n.id, baseUrl: n.baseUrl, apiKey: n.apiKey, useProxy: n.useProxy }),
+    });
+    const j = await res.json();
+    vpsTestMsg.value = {
+      ...vpsTestMsg.value,
+      [n.id]: j.success
+        ? `连接成功：${j.os || ""}，延迟 ${j.latencyMs}ms，容器 ${j.containers} 个`
+        : "连接失败：" + (j.error || "未知错误"),
+    };
+  } catch (e) {
+    vpsTestMsg.value = { ...vpsTestMsg.value, [n.id]: "连接失败：" + (e as Error).message };
+  } finally {
+    vpsTestingId.value = "";
+  }
+};
+const hasVpsWidget = computed(() => store.widgets.some((w) => w.type === "vps-monitor"));
+const enableVpsMonitorWidget = () => {
+  if (hasVpsWidget.value) return;
+  store.widgets.push({
+    id: "vps-monitor",
+    type: "vps-monitor",
+    enable: true,
+    isPublic: false,
+    colSpan: 4,
+    rowSpan: 2,
+    w: 4,
+    h: 2,
+  } as WidgetConfig);
+  store.markDirty();
+};
+const scrollToVpsSettings = () => {
+  activeTab.value = "lucky-stun";
+  setTimeout(() => {
+    const el = document.getElementById("vps-settings");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 100);
+};
+
+watch(activeTab, (tab) => { if (tab === "lucky-stun") { loadLxMusic(); loadVpsNodes(); } });
 
 const loadYunqiToken = async () => {
   tokenLoading.value = true;
@@ -1612,6 +1711,7 @@ const isUnknownWidget = (type: string) => {
     "status-monitor",
     "file-transfer",
     "music",
+    "vps-monitor",
   ];
 
   return !knownTypes.includes(type);
@@ -3071,12 +3171,14 @@ watch(activeTab, (val) => {
                       @click="
                         w.type === 'music'
                           ? scrollToMusicSettings()
-                          : w.type === 'system-status'
-                            ? (activeTab = 'docker')
-                            : (editingOpacityId = w.id)
+                          : w.type === 'vps-monitor'
+                            ? scrollToVpsSettings()
+                            : w.type === 'system-status'
+                              ? (activeTab = 'docker')
+                              : (editingOpacityId = w.id)
                       "
                       :title="
-                        w.type === 'music' || w.type === 'system-status'
+                        w.type === 'music' || w.type === 'system-status' || w.type === 'vps-monitor'
                           ? $t('settings.sections.clickToSettings')
                           : $t('settings.sections.clickToStyle')
                       "
@@ -4303,6 +4405,39 @@ watch(activeTab, (val) => {
                   </div>
                   <div v-if="lxImportMsg" class="text-xs text-gray-500">{{ lxImportMsg }}</div>
                 </div>
+              </div>
+            </div>
+
+            <!-- VPS Monitor Settings -->
+            <div id="vps-settings" class="bg-gray-50 border border-gray-100 rounded-xl p-4 mb-6">
+              <div class="flex items-center justify-between mb-4">
+                <h4 class="text-base font-bold text-gray-900">🖥️ VPS 监控（1Panel 接口）</h4>
+                <button v-if="!hasVpsWidget" @click="enableVpsMonitorWidget" class="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg font-bold hover:bg-gray-800">把组件加到首页</button>
+                <span v-else class="text-xs text-green-600 font-bold">组件已在首页</span>
+              </div>
+              <div class="space-y-3">
+                <p class="text-xs text-gray-500">数据从每台 VPS 的 1Panel 面板接口采集，不用 SSH、不用存机器密码：打开 1Panel → 设置 → API 接口，开启并生成密钥后填到这里。每 20 秒自动刷新：CPU、内存、磁盘、容器（含 sing-box）状态、网络速率。海外面板地址国内直连常被掐，默认走 NAS 的 sing-box 代理访问。</p>
+                <div v-for="n in vpsNodes" :key="n.id" class="bg-white border border-gray-200 rounded-lg p-3 space-y-2">
+                  <div class="grid grid-cols-2 gap-2">
+                    <input v-model="n.name" placeholder="名称，如：美国 VPS" class="px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-900" />
+                    <input v-model="n.baseUrl" placeholder="面板地址，如 https://panel.xxx.cc:端口" class="px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-900" />
+                  </div>
+                  <div class="flex gap-2">
+                    <input v-model="n.apiKey" type="password" :placeholder="n.hasKey ? 'API 密钥已保存（留空不改）' : '粘贴 1Panel 的 API 密钥'" class="flex-1 min-w-0 px-3 py-2 border border-gray-200 rounded-lg text-sm outline-none focus:border-gray-900" />
+                    <label class="flex items-center gap-1.5 text-xs text-gray-600 shrink-0">
+                      <input type="checkbox" v-model="n.useProxy" class="w-4 h-4 accent-gray-900" /> 走代理
+                    </label>
+                    <button @click="testVpsNode(n)" :disabled="vpsTestingId === n.id" class="px-3 py-2 rounded-lg bg-white border border-gray-300 text-sm font-bold text-gray-700 disabled:opacity-50 shrink-0">{{ vpsTestingId === n.id ? "测试中…" : "测试" }}</button>
+                    <button @click="deleteVpsNode(n)" class="px-3 py-2 rounded-lg bg-red-50 text-red-600 border border-red-200 text-sm font-bold shrink-0">删除</button>
+                  </div>
+                  <div v-if="vpsTestMsg[n.id]" class="text-xs" :class="vpsTestMsg[n.id].startsWith('连接成功') ? 'text-green-600' : 'text-red-500'">{{ vpsTestMsg[n.id] }}</div>
+                </div>
+                <div v-if="!vpsNodes.length" class="text-xs text-gray-400">还没有节点，点下面「添加节点」开始。</div>
+                <div class="flex gap-2">
+                  <button @click="addVpsNodeRow" class="px-3 py-2 rounded-lg bg-white border border-gray-300 text-sm font-bold text-gray-700">＋ 添加节点</button>
+                  <button @click="saveVpsNodes" :disabled="vpsSaving" class="flex-1 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-50">{{ vpsSaving ? "保存中…" : "保存节点设置" }}</button>
+                </div>
+                <div v-if="vpsSaveMsg" class="text-xs" :class="vpsSaveOk ? 'text-green-600' : 'text-red-500'">{{ vpsSaveMsg }}</div>
               </div>
             </div>
             <!-- Custom CSS Section -->
