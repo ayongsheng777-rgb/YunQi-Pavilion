@@ -2,6 +2,8 @@ package yunqi
 
 import (
 	"bytes"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -35,6 +38,7 @@ type MusicConfig struct {
 	DefaultSource  string `json:"defaultSource"`  // 默认音源平台 kw/kg/tx/wy/mg
 	DefaultQuality string `json:"defaultQuality"` // 默认音质 128k/320k/flac/flac24bit
 	DefaultMode    string `json:"defaultMode"`    // 默认模式 play/download/playDownload
+	LyricDownload  bool   `json:"lyricDownload"`  // 下载歌曲时是否同时下载歌词（.lrc）
 }
 
 func musicConfigFile() string {
@@ -80,6 +84,7 @@ func loadMusicConfig() MusicConfig {
 		if saved.DefaultMode != "" {
 			cfg.DefaultMode = saved.DefaultMode
 		}
+		cfg.LyricDownload = saved.LyricDownload
 	}
 	return cfg
 }
@@ -311,21 +316,8 @@ func runDownload(cfg MusicConfig, task *DownloadTask, source string, musicInfo m
 		fail(msg)
 		return
 	}
-	// 2. 下载到 NAS 目录。设置里的写法：
-	//   空 = /downloads；vol1/... 或 vol2/... 开头 = 对应磁盘下的任意路径；
-	//   以 / 开头 = 容器内绝对路径原样用；只填名字 = /downloads 下的子目录。
-	downloadDir := strings.TrimSpace(cfg.DownloadDir)
-	switch {
-	case downloadDir == "":
-		downloadDir = "/downloads"
-	case downloadDir == "vol1" || downloadDir == "vol2" ||
-		strings.HasPrefix(downloadDir, "vol1/") || strings.HasPrefix(downloadDir, "vol2/"):
-		downloadDir = filepath.Join("/nas", downloadDir)
-	case filepath.IsAbs(downloadDir):
-		// 原样用
-	default:
-		downloadDir = filepath.Join("/downloads", downloadDir)
-	}
+	// 2. 下载到 NAS 目录（规则见 resolveDownloadDir）
+	downloadDir := resolveDownloadDir(cfg)
 	if err := os.MkdirAll(downloadDir, 0755); err != nil {
 		fail("下载目录打不开：" + downloadDir)
 		return
@@ -385,6 +377,237 @@ func runDownload(cfg MusicConfig, task *DownloadTask, source string, musicInfo m
 	task.Status = "done"
 	task.Progress = task.Total
 	downloadMu.Unlock()
+
+	// 歌单记录 + 按设置同步下载歌词
+	hasLyric := false
+	if cfg.LyricDownload {
+		hasLyric = fetchAndSaveLyric(cfg, source, musicInfo, filePath)
+	}
+	if st, err := os.Stat(filePath); err == nil {
+		recordDownloaded(DownloadedSong{
+			Name: task.Name, Singer: task.Singer, File: fileName, Path: filePath,
+			Size: st.Size(), HasLyric: hasLyric, Source: source, Quality: task.Quality,
+			DownloadedAt: time.Now(),
+		})
+	}
+}
+
+// resolveDownloadDir 把设置里的下载目录写法翻译成容器内绝对路径：
+//   空 = /downloads；vol1/... 或 vol2/... 开头 = 对应磁盘下的任意路径；
+//   以 / 开头 = 容器内绝对路径原样用；只填名字 = /downloads 下的子目录。
+func resolveDownloadDir(cfg MusicConfig) string {
+	dir := strings.TrimSpace(cfg.DownloadDir)
+	switch {
+	case dir == "":
+		return "/downloads"
+	case dir == "vol1" || dir == "vol2" ||
+		strings.HasPrefix(dir, "vol1/") || strings.HasPrefix(dir, "vol2/"):
+		return filepath.Join("/nas", dir)
+	case filepath.IsAbs(dir):
+		return dir
+	default:
+		return filepath.Join("/downloads", dir)
+	}
+}
+
+// ---- 歌单：已下载歌曲的持久记录 + 目录扫描 ----
+
+type DownloadedSong struct {
+	ID           string    `json:"id"`
+	Name         string    `json:"name"`
+	Singer       string    `json:"singer"`
+	File         string    `json:"file"`
+	Path         string    `json:"path"`
+	Size         int64     `json:"size"`
+	HasLyric     bool      `json:"hasLyric"`
+	Source       string    `json:"source"`
+	Quality      string    `json:"quality"`
+	DownloadedAt time.Time `json:"downloadedAt"`
+}
+
+var playlistMu sync.Mutex
+
+func downloadIndexFile() string {
+	return filepath.Join(YunqiDir(), "download_index.json")
+}
+
+func songID(absPath string) string {
+	h := sha1.Sum([]byte(absPath))
+	return hex.EncodeToString(h[:])[:16]
+}
+
+func loadDownloadIndex() []DownloadedSong {
+	var list []DownloadedSong
+	if err := utils.ReadJSON(downloadIndexFile(), &list); err != nil {
+		return []DownloadedSong{}
+	}
+	return list
+}
+
+func saveDownloadIndex(list []DownloadedSong) {
+	_ = os.MkdirAll(filepath.Dir(downloadIndexFile()), 0755)
+	_ = utils.WriteJSON(downloadIndexFile(), list)
+}
+
+// recordDownloaded 把一首下载完成的歌记入歌单（同路径覆盖）
+func recordDownloaded(song DownloadedSong) {
+	playlistMu.Lock()
+	defer playlistMu.Unlock()
+	list := loadDownloadIndex()
+	out := list[:0]
+	for _, s := range list {
+		if s.Path != song.Path {
+			out = append(out, s)
+		}
+	}
+	song.ID = songID(song.Path)
+	list = append(out, song)
+	saveDownloadIndex(list)
+}
+
+func lyricSidecar(audioPath string) string {
+	ext := filepath.Ext(audioPath)
+	return strings.TrimSuffix(audioPath, ext) + ".lrc"
+}
+
+// fetchAndSaveLyric 问引擎要歌词并存成同名 .lrc；成功返回 true
+func fetchAndSaveLyric(cfg MusicConfig, source string, musicInfo map[string]interface{}, audioPath string) bool {
+	mi, _ := json.Marshal(musicInfo)
+	q := url.Values{}
+	q.Set("source", source)
+	q.Set("musicInfo", string(mi))
+	resp, err := engineRequest(cfg, "GET", "/api/lyric", q, nil, "")
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	var env struct {
+		Data struct {
+			Lyric string `json:"lyric"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(data, &env) != nil || strings.TrimSpace(env.Data.Lyric) == "" {
+		return false
+	}
+	return os.WriteFile(lyricSidecar(audioPath), []byte(env.Data.Lyric), 0644) == nil
+}
+
+var audioExts = map[string]bool{".mp3": true, ".flac": true, ".m4a": true, ".wav": true, ".ogg": true}
+
+// buildPlaylist 组装当前歌单：下载记录（文件还在的）+ 扫描当前下载目录里未记录的音频文件
+func buildPlaylist(cfg MusicConfig) []DownloadedSong {
+	byPath := map[string]*DownloadedSong{}
+	var list []DownloadedSong
+	add := func(s DownloadedSong) {
+		if _, ok := byPath[s.Path]; ok {
+			return
+		}
+		s.ID = songID(s.Path)
+		cp := s
+		byPath[s.Path] = &cp
+		list = append(list, cp)
+	}
+	for _, s := range loadDownloadIndex() {
+		if st, err := os.Stat(s.Path); err == nil && !st.IsDir() {
+			s.Size = st.Size()
+			_, lerr := os.Stat(lyricSidecar(s.Path))
+			s.HasLyric = lerr == nil
+			add(s)
+		}
+	}
+	dir := resolveDownloadDir(cfg)
+	if entries, err := os.ReadDir(dir); err == nil {
+		for _, e := range entries {
+			if e.IsDir() || !audioExts[strings.ToLower(filepath.Ext(e.Name()))] {
+				continue
+			}
+			p := filepath.Join(dir, e.Name())
+			if _, ok := byPath[p]; ok {
+				continue
+			}
+			info, ierr := e.Info()
+			if ierr != nil {
+				continue
+			}
+			base := strings.TrimSuffix(e.Name(), filepath.Ext(e.Name()))
+			name, singer := base, ""
+			if parts := strings.SplitN(base, " - ", 2); len(parts) == 2 {
+				name, singer = parts[0], parts[1]
+			}
+			_, lerr := os.Stat(lyricSidecar(p))
+			add(DownloadedSong{
+				Name: name, Singer: singer, File: e.Name(), Path: p,
+				Size: info.Size(), HasLyric: lerr == nil,
+				Source: "local", DownloadedAt: info.ModTime(),
+			})
+		}
+	}
+	sort.Slice(list, func(i, j int) bool { return list[i].DownloadedAt.After(list[j].DownloadedAt) })
+	return list
+}
+
+// GET /api/music/playlist
+func MusicPlaylist(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"list": buildPlaylist(loadMusicConfig())})
+}
+
+// GET /api/music/stream?id=  播放已下载的本地歌曲（支持 token 查询参数，音频标签用）
+func MusicStream(c *gin.Context) {
+	id := c.Query("id")
+	for _, s := range buildPlaylist(loadMusicConfig()) {
+		if s.ID == id {
+			c.File(s.Path)
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "歌曲不存在"})
+}
+
+// GET /api/music/playlist/lyric?id=  读本地歌的 .lrc 歌词
+func MusicPlaylistLyric(c *gin.Context) {
+	id := c.Query("id")
+	for _, s := range buildPlaylist(loadMusicConfig()) {
+		if s.ID == id {
+			data, err := os.ReadFile(lyricSidecar(s.Path))
+			if err != nil {
+				c.JSON(http.StatusOK, gin.H{"lyric": ""})
+				return
+			}
+			c.JSON(http.StatusOK, gin.H{"lyric": string(data)})
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "歌曲不存在"})
+}
+
+// POST /api/music/playlist/delete { id }
+func MusicPlaylistDelete(c *gin.Context) {
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil || req.ID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "参数不对"})
+		return
+	}
+	for _, s := range buildPlaylist(loadMusicConfig()) {
+		if s.ID == req.ID {
+			_ = os.Remove(s.Path)
+			_ = os.Remove(lyricSidecar(s.Path))
+			playlistMu.Lock()
+			var kept []DownloadedSong
+			for _, x := range loadDownloadIndex() {
+				if x.Path != s.Path {
+					kept = append(kept, x)
+				}
+			}
+			saveDownloadIndex(kept)
+			playlistMu.Unlock()
+			c.JSON(http.StatusOK, gin.H{"success": true})
+			return
+		}
+	}
+	c.JSON(http.StatusNotFound, gin.H{"error": "歌曲不存在"})
 }
 
 // GET /api/music/download/tasks

@@ -945,6 +945,7 @@ const lxConfig = ref<YqMusicConfig>({
   defaultSource: "kw",
   defaultQuality: "320k",
   defaultMode: "play",
+  lyricDownload: false,
 });
 const lxSources = ref<YqSourceScript[]>([]);
 const lxSourceUrl = ref("");
@@ -4256,6 +4257,10 @@ watch(activeTab, (val) => {
                       </select>
                     </div>
                   </div>
+                  <label class="flex items-center justify-between cursor-pointer">
+                    <span class="text-sm text-gray-700">下载歌曲时同时下载歌词（存同名 .lrc 文件，歌单里播放能看歌词）</span>
+                    <input type="checkbox" v-model="lxConfig.lyricDownload" class="w-4 h-4 accent-gray-900 shrink-0 ml-3" />
+                  </label>
                   <button @click="saveLxConfig" :disabled="lxSaving" class="w-full bg-gray-900 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-800 disabled:opacity-50">
                     {{ lxSaving ? "保存中…" : "保存音乐设置" }}
                   </button>

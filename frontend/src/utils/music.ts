@@ -39,6 +39,44 @@ export interface MusicConfig {
   defaultSource: string;
   defaultQuality: string;
   defaultMode: string;
+  lyricDownload: boolean;
+}
+
+export interface PlaylistItem {
+  id: string;
+  name: string;
+  singer: string;
+  file: string;
+  size: number;
+  hasLyric: boolean;
+  source: string;
+  quality: string;
+  downloadedAt: string;
+}
+
+/** 歌单：已下载的歌曲（后端持久记录 + 扫描下载目录） */
+export async function fetchPlaylist(): Promise<PlaylistItem[]> {
+  const r = await api<{ list: PlaylistItem[] }>("/api/music/playlist");
+  return r.list || [];
+}
+
+export async function deletePlaylistItem(id: string): Promise<void> {
+  await api("/api/music/playlist/delete", {
+    method: "POST",
+    body: JSON.stringify({ id }),
+  });
+}
+
+export async function fetchPlaylistLyric(id: string): Promise<string> {
+  const r = await api<{ lyric: string }>(
+    `/api/music/playlist/lyric?id=${encodeURIComponent(id)}`
+  );
+  return r.lyric || "";
+}
+
+/** 本地歌曲播放地址（音频标签不能带请求头，令牌走查询参数，后端本来就支持） */
+export function localStreamUrl(id: string): string {
+  return `/api/music/stream?id=${encodeURIComponent(id)}&token=${encodeURIComponent(getToken())}`;
 }
 
 export interface SourceScript {

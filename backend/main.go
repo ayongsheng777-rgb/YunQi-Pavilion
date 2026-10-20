@@ -428,6 +428,32 @@ func main() {
 		itdaily.GET("/latest", yunqi.ITDailyLatest)
 	}
 
+	// 模块 1c：音乐（LX Music 集成，代理同项目的 music-engine 服务 + 下载到 NAS）
+	music := api.Group("/music")
+	music.Use(middleware.AuthMiddleware())
+	{
+		music.GET("/config", yunqi.MusicGetConfig)
+		music.POST("/config", yunqi.MusicSaveConfig)
+		music.GET("/sources", yunqi.MusicProxyEngine("/api/sources"))
+		music.POST("/sources/import", yunqi.MusicProxyEngine("/api/sources/import"))
+		music.DELETE("/sources/:id", yunqi.MusicProxyEngine("/api/sources/:id"))
+		music.GET("/search", yunqi.MusicProxyEngine("/api/search"))
+		music.POST("/music-url", yunqi.MusicProxyEngine("/api/music-url"))
+		music.GET("/lyric", yunqi.MusicProxyEngine("/api/lyric"))
+		music.GET("/pic", yunqi.MusicProxyEngine("/api/pic"))
+		music.GET("/leaderboard", yunqi.MusicProxyEngine("/api/leaderboard"))
+		music.GET("/leaderboard/songs", yunqi.MusicProxyEngine("/api/leaderboard/songs"))
+		music.GET("/songlist/list", yunqi.MusicProxyEngine("/api/songlist/list"))
+		music.GET("/songlist/songs", yunqi.MusicProxyEngine("/api/songlist/songs"))
+		music.GET("/hot-search", yunqi.MusicProxyEngine("/api/hot-search"))
+		music.POST("/download", yunqi.MusicDownload)
+		music.GET("/download/tasks", yunqi.MusicDownloadTasks)
+		music.GET("/playlist", yunqi.MusicPlaylist)
+		music.GET("/playlist/lyric", yunqi.MusicPlaylistLyric)
+		music.POST("/playlist/delete", yunqi.MusicPlaylistDelete)
+		music.GET("/stream", yunqi.MusicStream)
+	}
+
 	// 模块 4：AI（JWT 鉴权）
 	aiGrp := api.Group("/ai")
 	aiGrp.Use(middleware.AuthMiddleware())

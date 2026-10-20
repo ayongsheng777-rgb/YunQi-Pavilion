@@ -2,6 +2,7 @@
 import { ref, onMounted, watch, nextTick } from "vue";
 import { useMusicPlayer } from "@/stores/musicPlayer";
 import MusicPanel from "@/components/MusicPanel.vue";
+import LyricsOverlay from "@/components/LyricsOverlay.vue";
 
 const player = useMusicPlayer();
 const { current, isPlaying, resolving, currentLyric, playError } = player;
@@ -144,6 +145,13 @@ onMounted(() => {
             </svg>
           </button>
           <button
+            @click="player.lyricsOpen.value = true"
+            class="w-6 h-6 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-all text-[11px] font-bold"
+            title="歌词"
+          >
+            词
+          </button>
+          <button
             @click="player.openPanel('search')"
             class="w-6 h-6 rounded-full flex items-center justify-center text-white/80 hover:text-white hover:bg-white/20 transition-all"
             title="点歌"
@@ -166,6 +174,7 @@ onMounted(() => {
     </div>
 
     <MusicPanel />
+    <LyricsOverlay />
   </div>
 </template>
 

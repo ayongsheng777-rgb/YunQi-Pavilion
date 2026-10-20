@@ -12,12 +12,16 @@ import {
   fetchPic,
   startDownload,
   fetchDownloadTasks,
+  fetchPlaylist,
+  fetchPlaylistLyric,
+  localStreamUrl,
   type MusicInfo,
   type DownloadTask,
+  type PlaylistItem,
 } from "@/utils/music";
 
 export type PlayMode = "play" | "download" | "playDownload";
-export type PanelTab = "search" | "downloads";
+export type PanelTab = "search" | "playlist" | "downloads";
 
 interface LyricLine {
   time: number;
@@ -51,6 +55,8 @@ const panelTab = ref<PanelTab>("search");
 const engineOk = ref<boolean | null>(null);
 const loadedSourceCount = ref(0);
 const downloadTasks = ref<DownloadTask[]>([]);
+const playlist = ref<PlaylistItem[]>([]);
+const lyricsOpen = ref(false);
 const notice = ref("");
 
 const current = computed<MusicInfo | null>(() =>
@@ -136,6 +142,27 @@ const playTrack = async (info: MusicInfo, list?: MusicInfo[]) => {
   }
   playError.value = "";
 
+  // 本地已下载歌曲：直接放 NAS 上的文件，不走音源解析、也不触发下载
+  if (info.source === "local") {
+    coverUrl.value = "";
+    lyricLines.value = [];
+    const a = ensureAudio();
+    a.src = localStreamUrl(String(info.songmid));
+    try {
+      await a.play();
+      isPlaying.value = true;
+    } catch {
+      playError.value = "播放失败，这首本地歌曲可能被删了";
+      isPlaying.value = false;
+    }
+    fetchPlaylistLyric(String(info.songmid)).then((text) => {
+      if (text && current.value?.songmid === info.songmid) {
+        lyricLines.value = parseLrc(text);
+      }
+    });
+    return;
+  }
+
   if (mode.value === "download" || mode.value === "playDownload") {
     try {
       await startDownload(info.source, info, quality.value);
@@ -220,13 +247,44 @@ const cycleMode = () => {
   showNotice("模式：" + modeLabel.value);
 };
 
-// ---------- 下载 ----------
+// ---------- 下载与歌单 ----------
 const refreshTasks = async () => {
   try {
     downloadTasks.value = await fetchDownloadTasks();
   } catch {
     /* 忽略 */
   }
+  void refreshPlaylist();
+};
+
+const refreshPlaylist = async () => {
+  try {
+    playlist.value = await fetchPlaylist();
+  } catch {
+    /* 忽略 */
+  }
+};
+
+/** 把歌单条目转成播放队列用的歌曲对象 */
+const playlistAsQueue = (list: PlaylistItem[]): MusicInfo[] =>
+  list.map((it) => ({
+    name: it.name,
+    singer: it.singer,
+    source: "local",
+    songmid: it.id,
+    albumName: "已下载",
+    types: [],
+  }));
+
+const playPlaylistItem = (item: PlaylistItem) => {
+  const q = playlistAsQueue(playlist.value);
+  const info = q.find((x) => x.songmid === item.id) || q[0];
+  if (info) void playTrack(info, q);
+};
+
+const seekToTime = (sec: number) => {
+  const a = ensureAudio();
+  a.currentTime = Math.max(0, sec);
 };
 
 const downloadTrack = async (info: MusicInfo) => {
@@ -268,9 +326,11 @@ const initPlayer = async () => {
   void refreshTasks();
 };
 
-const openPanel = (tab: PanelTab = "search") => {
-  panelTab.value = tab;
+const openPanel = (tab?: PanelTab) => {
+  // 不指定页时：歌单里有歌就先看歌单，否则去搜索
+  panelTab.value = tab ?? (playlist.value.length ? "playlist" : "search");
   panelOpen.value = true;
+  void refreshPlaylist();
 };
 
 export function useMusicPlayer() {
@@ -294,6 +354,9 @@ export function useMusicPlayer() {
     engineOk,
     loadedSourceCount,
     downloadTasks,
+    playlist,
+    lyricsOpen,
+    lyricIndex,
     notice,
     modeLabel,
     progressPct,
@@ -301,9 +364,12 @@ export function useMusicPlayer() {
     togglePlay,
     step,
     seekRatio,
+    seekToTime,
     setVolume,
     cycleMode,
     refreshTasks,
+    refreshPlaylist,
+    playPlaylistItem,
     downloadTrack,
     initPlayer,
     openPanel,

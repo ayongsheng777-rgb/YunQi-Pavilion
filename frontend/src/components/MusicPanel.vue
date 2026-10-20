@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { ref, onUnmounted, watch } from "vue";
 import { useMusicPlayer } from "@/stores/musicPlayer";
-import { QUALITIES, searchAllSources, type MusicInfo } from "@/utils/music";
+import {
+  QUALITIES,
+  searchAllSources,
+  deletePlaylistItem,
+  type MusicInfo,
+  type PlaylistItem,
+} from "@/utils/music";
 
 const player = useMusicPlayer();
 const {
@@ -10,10 +16,30 @@ const {
   engineOk,
   loadedSourceCount,
   downloadTasks,
+  playlist,
+  current,
   notice,
   modeLabel,
   quality,
 } = player;
+
+const fmtSize = (n: number) =>
+  n > 1024 * 1024 ? (n / 1024 / 1024).toFixed(1) + " MB" : Math.round(n / 1024) + " KB";
+
+const onPlayLocal = (item: PlaylistItem) => {
+  player.playPlaylistItem(item);
+  panelOpen.value = false;
+};
+
+const onDeleteLocal = async (item: PlaylistItem) => {
+  try {
+    await deletePlaylistItem(item.id);
+    player.showNotice("已删除：" + item.name);
+    void player.refreshPlaylist();
+  } catch (e) {
+    player.showNotice("删除失败：" + (e as Error).message);
+  }
+};
 
 // ---------- 搜索（聚合：五家曲库一起搜，界面不分平台） ----------
 const searchQuery = ref("");
@@ -117,6 +143,7 @@ const onPlay = (info: MusicInfo) => {
       <div class="flex gap-2 px-4 pt-3">
         <button
           v-for="t in [
+            { id: 'playlist', n: '歌单' },
             { id: 'search', n: '搜索' },
             { id: 'downloads', n: '下载' },
           ]"
@@ -134,6 +161,50 @@ const onPlay = (info: MusicInfo) => {
         class="mx-4 mt-2 px-3 py-2 rounded-lg bg-emerald-500/20 text-emerald-200 text-xs"
       >
         {{ notice }}
+      </div>
+
+      <!-- 歌单页：已下载的歌曲 -->
+      <div
+        v-if="panelTab === 'playlist'"
+        class="flex flex-col min-h-0 px-4 py-3 overflow-y-auto"
+      >
+        <div v-if="!playlist.length" class="text-center text-white/40 text-sm py-6">
+          还没有下载的歌。去搜索页点 ⬇ 下载，下完自动进歌单，在这里点开就能放（放的是 NAS 上的文件，不用再解析）
+        </div>
+        <div
+          v-for="it in playlist"
+          :key="it.id"
+          class="flex items-center gap-2 px-2 py-2 rounded-lg hover:bg-white/5 cursor-pointer"
+          :class="current && current.source === 'local' && current.songmid === it.id ? 'bg-white/10' : ''"
+          @click="onPlayLocal(it)"
+        >
+          <div class="flex-1 min-w-0">
+            <div class="text-sm truncate">
+              {{ it.name }}
+              <span
+                v-if="it.hasLyric"
+                class="text-[10px] px-1.5 py-0.5 rounded bg-sky-500/30 text-sky-200 align-middle"
+                >词</span
+              >
+            </div>
+            <div class="text-xs text-white/50 truncate">
+              {{ it.singer }} · {{ it.quality || "" }} · {{ fmtSize(it.size) }}
+            </div>
+          </div>
+          <button
+            @click.stop="onDeleteLocal(it)"
+            title="从 NAS 删除这首歌"
+            class="w-7 h-7 rounded-full bg-white/10 hover:bg-red-500/60 text-xs shrink-0"
+          >
+            🗑
+          </button>
+        </div>
+        <button
+          @click="player.refreshPlaylist"
+          class="mt-2 py-2 text-xs text-white/60 hover:text-white"
+        >
+          刷新
+        </button>
       </div>
 
       <!-- 搜索页 -->
