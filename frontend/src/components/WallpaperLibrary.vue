@@ -447,6 +447,11 @@ const previewKey = "wallpaper-preview";
 
 const presetApis = [
   {
+    name: "⭐ 默认API (upx8)",
+    url: "https://wp.upx8.com/api.php?category=girl&resolution=1920x1080",
+    autoUpdate: true,
+  },
+  {
     name: "Bing 每日壁纸",
     url: "https://bing.biturl.top/?resolution=1920&format=image&index=0&mkt=zh-CN",
     autoUpdate: true,
@@ -1204,6 +1209,9 @@ onBeforeUnmount(() => {
               </ul>
               <div class="mt-2 text-xs opacity-80">
                 设置后，每次刷新页面可能会根据 API 返回不同的图片（取决于 API 行为）。
+              </div>
+              <div class="mt-2 text-xs bg-white/60 border border-blue-100 rounded-lg px-2.5 py-1.5 break-all">
+                📌 <b>默认API</b>：https://wp.upx8.com/api.php?category=girl&amp;resolution=1920x1080（已设为默认并启用，桌面拉杆会优先使用这个接口的壁纸；点上方预设里的「⭐ 默认API」也可一键填入。）
               </div>
             </div>
 

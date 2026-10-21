@@ -2981,23 +2981,65 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- 🛸 壁纸拉杆（右上角在线图标下方，仅登录后可见）：开关存图到PC库 / 拉杆换壁纸 -->
+    <!-- 🛸 壁纸拉杆（右上角在线图标下方，仅登录后可见）：玻璃青蓝风，照用户参考图 -->
     <div v-if="store.isLogged" class="fixed right-3 top-[74px] z-40 flex flex-col items-center select-none">
-      <button @click="saveApiWallpaper" title="把API接口的壁纸存入PC壁纸库" class="flex flex-col items-center gap-0.5 bg-transparent border-none cursor-pointer p-0 opacity-85 hover:opacity-100 transition-opacity">
-        <span class="relative block w-9 h-[18px] rounded-full border border-cyan-200/40 bg-slate-900/85 shadow-[0_0_8px_rgba(34,211,238,0.25)]">
-          <span class="absolute top-[2px] w-[12px] h-[12px] rounded-full transition-all duration-300" :style="{ left: saveSwitchOn ? '20px' : '3px', background: saveSwitchOn ? '#22d3ee' : '#64748b', boxShadow: saveSwitchOn ? '0 0 8px #22d3ee' : 'none' }"></span>
+      <!-- 存PC库按钮 -->
+      <button
+        @click="saveApiWallpaper"
+        title="把API接口的壁纸存入PC壁纸库"
+        class="px-3.5 py-2 rounded-[14px] text-white text-[13px] font-bold cursor-pointer transition-all duration-300 hover:brightness-110 active:scale-95"
+        :style="{
+          background: 'linear-gradient(160deg, #38bdf8 0%, #22d3ee 45%, #5eead4 100%)',
+          border: '1.5px solid rgba(255,255,255,0.65)',
+          textShadow: '0 1px 3px rgba(8,145,178,0.55)',
+          boxShadow: saveSwitchOn
+            ? '0 0 0 4px rgba(56,189,248,0.45), 0 8px 22px rgba(34,211,238,0.65), inset 0 1px 3px rgba(255,255,255,0.8)'
+            : '0 0 0 3px rgba(56,189,248,0.30), 0 6px 16px rgba(34,211,238,0.40), inset 0 1px 3px rgba(255,255,255,0.75)',
+        }"
+      >存PC库</button>
+      <!-- 拉绳轨道（点轨道或下面按钮都是拉杆换壁纸） -->
+      <button
+        @click="pullWallpaperLever"
+        title="拉一下换壁纸（填了API就优先用API的图）"
+        class="relative mt-2 block w-[46px] h-[118px] rounded-full cursor-pointer transition-all duration-300 hover:brightness-105 active:scale-[0.98]"
+        :style="{
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(207,250,254,0.35) 60%, rgba(165,243,252,0.30) 100%)',
+          border: '1.5px solid rgba(165,243,252,0.85)',
+          boxShadow: 'inset 0 2px 8px rgba(255,255,255,0.85), inset 0 -8px 14px rgba(103,232,249,0.35), 0 4px 14px rgba(34,211,238,0.25)',
+        }"
+      >
+        <!-- 金色拉绳 -->
+        <span
+          class="absolute left-1/2 -ml-[2.5px] top-[8px] w-[5px] rounded-full transition-all duration-300"
+          :style="{
+            height: `${leverPulled ? 74 : 50}px`,
+            background: 'repeating-linear-gradient(45deg, #f59e0b 0px, #f59e0b 3px, #fef3c7 3px, #fef3c7 6px)',
+          }"
+        ></span>
+        <!-- 吊坠 -->
+        <span
+          class="absolute left-1/2 -ml-[8px] flex flex-col items-center transition-transform duration-300"
+          :style="{ top: '54px', transform: `translateY(${leverPulled ? 24 : 0}px)` }"
+        >
+          <span class="block w-3.5 h-3.5 rounded-full border border-white/70 shadow" :style="{ background: 'radial-gradient(circle at 35% 30%, #99f6e4, #14b8a6 65%, #0f766e)' }"></span>
+          <span class="block w-4 h-[26px] -mt-[3px] border border-white/60 shadow" :style="{ background: 'linear-gradient(180deg, #5eead4 0%, #fcd34d 42%, #fb923c 78%, #38bdf8 100%)', borderRadius: '46% 46% 50% 50% / 26% 26% 62% 62%' }"></span>
         </span>
-        <span class="text-[9px] leading-none text-cyan-100/85 bg-slate-900/70 rounded px-1 py-0.5 border border-cyan-200/20">存PC库</span>
+        <!-- 下拉小箭头 -->
+        <span class="absolute right-[5px] top-[62%] text-[11px] font-bold pointer-events-none" :style="{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(14,116,144,0.6)' }">↓</span>
       </button>
-      <button @click="pullWallpaperLever" title="拉一下换壁纸（填了API就优先用API的图）" class="relative mt-1.5 flex flex-col items-center bg-transparent border-none cursor-pointer p-0 opacity-90 hover:opacity-100 transition-opacity">
-        <span class="relative block w-8 h-[68px] border border-cyan-200/30 bg-gradient-to-b from-slate-800/90 to-slate-950/90 shadow-[0_0_10px_rgba(34,211,238,0.15)]" style="clip-path: polygon(18% 0, 82% 0, 100% 12%, 100% 100%, 0 100%, 0 12%)">
-          <span class="absolute left-1/2 top-2 bottom-2 w-[6px] -ml-[3px] rounded-full bg-black/70 shadow-[inset_0_1px_4px_rgba(0,0,0,0.9)]"></span>
-          <span class="absolute left-1/2 -ml-[2px] top-[14px] w-[4px] h-[30px] rounded bg-gradient-to-b from-slate-100 to-slate-400 transition-transform duration-300" :style="{ transform: `translateY(${leverPulled ? 16 : 0}px) scaleY(${leverPulled ? 0.55 : 1})`, transformOrigin: 'bottom' }"></span>
-          <span class="absolute left-1/2 top-[6px] w-[18px] h-[18px] -ml-[9px] rounded-full border border-orange-200/60 shadow-md transition-transform duration-300" :style="{ transform: `translateY(${leverPulled ? 34 : 0}px)`, background: 'radial-gradient(circle at 35% 30%, #fed7aa, #f97316 60%, #7c2d12)' }"></span>
-        </span>
-        <span class="mt-1 text-[9px] leading-none text-cyan-100/85 bg-slate-900/70 rounded px-1 py-0.5 border border-cyan-200/20">换壁纸</span>
-      </button>
-      <span v-if="leverHint" class="mt-1 text-[10px] text-amber-200 bg-black/60 rounded-full px-2 py-0.5 whitespace-nowrap">{{ leverHint }}</span>
+      <!-- 换壁纸按钮 -->
+      <button
+        @click="pullWallpaperLever"
+        title="拉一下换壁纸（填了API就优先用API的图）"
+        class="mt-2 px-3.5 py-1.5 rounded-full text-white text-[13px] font-bold cursor-pointer transition-all duration-300 hover:brightness-110 active:scale-95"
+        :style="{
+          background: 'linear-gradient(90deg, #67e8f9 0%, #7dd3fc 35%, #fdba74 100%)',
+          border: '1.5px solid rgba(255,255,255,0.65)',
+          textShadow: '0 1px 3px rgba(154,52,18,0.35)',
+          boxShadow: '0 5px 14px rgba(251,146,60,0.35), inset 0 1px 3px rgba(255,255,255,0.75)',
+        }"
+      >换壁纸</button>
+      <span v-if="leverHint" class="mt-1.5 text-[10px] text-amber-200 bg-black/60 rounded-full px-2 py-0.5 whitespace-nowrap">{{ leverHint }}</span>
     </div>
 
     <!-- ✨ Global Background Layer -->
