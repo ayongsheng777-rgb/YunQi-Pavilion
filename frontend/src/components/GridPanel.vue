@@ -86,7 +86,37 @@ const FileTransferWidget = loadAsync(() => import("./FileTransferWidget.vue"));
 const SizeSelector = loadAsync(() => import("./SizeSelector.vue"));
 
 const store = useMainStore();
-const { apiUpdateError, resetError } = useWallpaperRotation();
+const { apiUpdateError, resetError, rotate } = useWallpaperRotation();
+
+// 🎰 壁纸拉杆：拉一下 → 刷新壁纸库 → 按当前轮换模式换一张 → 保存
+const leverPulled = ref(false);
+const leverBusy = ref(false);
+const leverHint = ref("");
+let leverHintTimer: ReturnType<typeof setTimeout> | null = null;
+const pullWallpaperLever = async () => {
+  if (leverBusy.value) return;
+  leverBusy.value = true;
+  leverPulled.value = true;
+  try {
+    await store.fetchWallpaperLists();
+    const list = isMobile.value ? store.wallpaperListMobile : store.wallpaperListPc;
+    if (!list || list.length === 0) {
+      leverHint.value = "壁纸库是空的";
+      if (leverHintTimer) clearTimeout(leverHintTimer);
+      leverHintTimer = setTimeout(() => (leverHint.value = ""), 2200);
+      return;
+    }
+    rotate(isMobile.value ? "mobile" : "pc");
+    store.markDirty();
+  } catch {
+    // 换壁纸失败保持安静，不打扰使用
+  } finally {
+    setTimeout(() => {
+      leverPulled.value = false;
+      leverBusy.value = false;
+    }, 400);
+  }
+};
 const { deviceKey, isMobile } = useDevice(toRef(store.appConfig, "deviceMode"));
 const { width, height } = useWindowSize();
 const isHeaderRowLayout = computed(() => width.value >= 1280);
@@ -2917,6 +2947,32 @@ onUnmounted(() => {
         </button>
       </div>
     </Transition>
+
+    <!-- 🎰 壁纸拉杆（仅登录后可见）：点一下换壁纸 -->
+    <div v-if="store.isLogged" class="fixed right-3 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center select-none">
+      <button
+        @click="pullWallpaperLever"
+        class="relative flex flex-col items-center cursor-pointer bg-transparent border-none p-1 opacity-70 hover:opacity-100 transition-opacity"
+        aria-label="换一张壁纸"
+        title="拉一下，换张壁纸"
+      >
+        <span class="relative block w-3 h-32 rounded-full bg-black/40 border border-white/30 shadow-[inset_0_2px_6px_rgba(0,0,0,0.6)]">
+          <span
+            class="absolute left-1/2 top-1 w-10 h-10 -ml-5 rounded-full border border-white/50 shadow-lg transition-transform duration-300 ease-out"
+            :style="{
+              transform: `translateY(${leverPulled ? 76 : 0}px)`,
+              background: 'radial-gradient(circle at 35% 30%, #fda4af, #e11d48 60%, #881337)',
+            }"
+          ></span>
+          <span
+            class="absolute left-1/2 top-9 w-1 h-20 -ml-0.5 rounded bg-gradient-to-b from-gray-100 to-gray-400 transition-transform duration-300 ease-out -z-10"
+            :style="{ transform: `translateY(${leverPulled ? 44 : 0}px) scaleY(${leverPulled ? 0.45 : 1})`, transformOrigin: 'bottom' }"
+          ></span>
+        </span>
+        <span class="mt-2 text-[10px] leading-none text-white/90 bg-black/40 rounded-full px-2 py-1 backdrop-blur-sm border border-white/20">换壁纸</span>
+      </button>
+      <span v-if="leverHint" class="mt-1 text-[10px] text-amber-200 bg-black/55 rounded-full px-2 py-1 backdrop-blur-sm whitespace-nowrap">{{ leverHint }}</span>
+    </div>
 
     <!-- ✨ Global Background Layer -->
     <div class="fixed inset-0 z-0 pointer-events-none select-none">
