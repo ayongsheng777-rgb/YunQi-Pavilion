@@ -289,6 +289,54 @@ export function useWallpaperRotation() {
     updateApiScheduler();
   };
 
+  // 拉杆专用：从已填的 API 接口拉一张壁纸存入对应壁纸库；apply=true 时同时设为当前壁纸。
+  // 与定时自动更新的区别：不查 hash、不跳过，每次拉必存必换（拉杆就是要立刻变）。
+  const pullApiWallpaper = async (type: "pc" | "mobile", apply: boolean): Promise<boolean> => {
+    const cfg = type === "pc" ? store.appConfig.wallpaperConfig : store.appConfig.mobileWallpaperConfig;
+    const apiUrl = (cfg?.url || "").trim();
+    if (!apiUrl) return false;
+    try {
+      const proxyRes = await fetch(
+        `/api/wallpaper/proxy?url=${encodeURIComponent(apiUrl)}&uuid=lever-${Date.now()}`,
+        { headers: store.getHeaders() as Record<string, string> },
+      );
+      if (!proxyRes.ok) return false;
+      const blob = await proxyRes.blob();
+      if (!blob.type.startsWith("image/")) return false;
+      const formData = new FormData();
+      formData.append("files", blob, `wallpaper_${Date.now()}.jpg`);
+      const uploadHeaders = store.getHeaders() as Record<string, string>;
+      delete uploadHeaders["Content-Type"];
+      const uploadRes = await fetch(
+        type === "pc" ? "/api/backgrounds/upload" : "/api/mobile_backgrounds/upload",
+        { method: "POST", headers: uploadHeaders, body: formData },
+      );
+      if (!uploadRes.ok) return false;
+      const data = await uploadRes.json();
+      const uploadedPath: string | undefined = data?.files?.[0]?.path;
+      if (!data?.success || !uploadedPath) return false;
+      if (apply) {
+        if (type === "pc") {
+          store.appConfig.background = uploadedPath;
+          if (store.appConfig.wallpaperConfig) {
+            store.appConfig.wallpaperConfig = { ...store.appConfig.wallpaperConfig, lastUpdated: Date.now() };
+          }
+        } else {
+          store.appConfig.mobileBackground = uploadedPath;
+          if (store.appConfig.mobileWallpaperConfig) {
+            store.appConfig.mobileWallpaperConfig = { ...store.appConfig.mobileWallpaperConfig, lastUpdated: Date.now() };
+          }
+        }
+        setStoredApiPath(type, uploadedPath);
+        store.markDirty();
+      }
+      await store.fetchWallpaperLists();
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   type FetchResult = "success" | "failed" | "auth_failed" | "no_change";
 
   const fetchAndUpdateWallpaper = async (
@@ -534,6 +582,7 @@ export function useWallpaperRotation() {
 
   return {
     rotate,
+    pullApiWallpaper,
     apiUpdateError,
     resetError,
   };
