@@ -343,8 +343,10 @@ func main() {
 		api.GET("/transfer/file/:filename", middleware.OptionalAuthMiddleware(), handlers.ServeFile)
 		api.GET("/transfer/thumb/:filename/:size", middleware.OptionalAuthMiddleware(), handlers.ServeThumb)
 		api.GET("/music-list", handlers.GetMusicList) // Added Music List
-		api.GET("/backgrounds", handlers.ListBackgrounds)
-		api.GET("/mobile_backgrounds", handlers.ListMobileBackgrounds)
+		// 壁纸列表必须挂 OptionalAuth：handler 按 owner 过滤，没有用户名时
+		// 已标主人的图会被全部滤掉、列表返回 null（界面显示"库被清空"，实际文件没丢）
+		api.GET("/backgrounds", middleware.OptionalAuthMiddleware(), handlers.ListBackgrounds)
+		api.GET("/mobile_backgrounds", middleware.OptionalAuthMiddleware(), handlers.ListMobileBackgrounds)
 
 		// Protected Routes
 		authorized := api.Group("/")

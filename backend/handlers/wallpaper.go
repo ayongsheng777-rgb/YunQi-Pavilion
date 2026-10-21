@@ -326,7 +326,7 @@ func listBackgrounds(c *gin.Context, dir string) {
 		return fileInfos[i].ModTime().After(fileInfos[j].ModTime())
 	})
 
-	var names []string
+	names := []string{}
 	for _, info := range fileInfos {
 		name := info.Name()
 		if isSupportedWallpaperFile(name) {
