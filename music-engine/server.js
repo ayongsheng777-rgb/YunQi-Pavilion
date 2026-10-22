@@ -48,7 +48,7 @@ const sourceNames = { kw: '酷我音乐', kg: '酷狗音乐', tx: 'QQ音乐', wy
 
 // 代理（走 NAS 上的 sing-box，音乐平台一般都需要；也可在云栖阁设置页运行时修改）
 if (process.env.PROXY_HOST) {
-  setProxy({ host: process.env.PROXY_HOST, port: Number(process.env.PROXY_PORT || 7890) })
+  setProxy({ host: process.env.PROXY_HOST, port: Number(process.env.PROXY_PORT || 7890), user: process.env.PROXY_USER || '', pass: process.env.PROXY_PASS || '' })
 }
 const proxyState = () => {
   const p = getProxy()
@@ -78,7 +78,7 @@ const routes = {
   'GET /api/config': async () => ({ proxy: getProxy(), engine: 'yunqi-music-engine/1.0.0' }),
   'POST /api/config': async (q, body) => {
     if (body.proxy !== undefined) {
-      setProxy(body.proxy && body.proxy.host ? { host: body.proxy.host, port: body.proxy.port } : null)
+      setProxy(body.proxy && body.proxy.host ? { host: body.proxy.host, port: body.proxy.port, user: body.proxy.user || '', pass: body.proxy.pass || '' } : null)
       console.log('[engine] proxy changed to:', proxyState())
     }
     return { proxy: getProxy() }

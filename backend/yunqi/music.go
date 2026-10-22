@@ -34,6 +34,8 @@ type MusicConfig struct {
 	ProxyEnabled   bool   `json:"proxyEnabled"`   // 是否给引擎开代理
 	ProxyHost      string `json:"proxyHost"`      // 代理主机（默认 NAS 本机 sing-box）
 	ProxyPort      int    `json:"proxyPort"`      // 代理端口
+	ProxyUser      string `json:"proxyUser"`      // 代理账号（sing-box 2026-10-21 起要认证）
+	ProxyPass      string `json:"proxyPass,omitempty"` // 代理密码（只存 NAS 配置，接口不回传明文）
 	DownloadDir    string `json:"downloadDir"`    // 容器内下载目录（compose 挂载 NAS 目录到 /downloads）
 	DefaultSource  string `json:"defaultSource"`  // 默认音源平台 kw/kg/tx/wy/mg
 	DefaultQuality string `json:"defaultQuality"` // 默认音质 128k/320k/flac/flac24bit
@@ -94,11 +96,20 @@ func saveMusicConfig(cfg MusicConfig) error {
 	return utils.WriteJSON(musicConfigFile(), cfg)
 }
 
+// musicProxyURL 拼带账号的代理地址（如 http://anyong:***@192.168.57.228:7890）
+func musicProxyURL(cfg MusicConfig) string {
+	u := &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:%d", cfg.ProxyHost, cfg.ProxyPort)}
+	if cfg.ProxyUser != "" {
+		u.User = url.UserPassword(cfg.ProxyUser, cfg.ProxyPass)
+	}
+	return u.String()
+}
+
 // 把代理配置推给引擎（引擎运行时生效）
 func pushProxyToEngine(cfg MusicConfig) {
 	body := map[string]interface{}{"proxy": nil}
 	if cfg.ProxyEnabled {
-		body["proxy"] = map[string]interface{}{"host": cfg.ProxyHost, "port": cfg.ProxyPort}
+		body["proxy"] = map[string]interface{}{"host": cfg.ProxyHost, "port": cfg.ProxyPort, "user": cfg.ProxyUser, "pass": cfg.ProxyPass}
 	}
 	data, _ := json.Marshal(body)
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -117,7 +128,9 @@ func pushProxyToEngine(cfg MusicConfig) {
 
 // GET /api/music/config
 func MusicGetConfig(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"config": loadMusicConfig()})
+	cfg := loadMusicConfig()
+	cfg.ProxyPass = "" // 密码不回前端；保存时留空=不改
+	c.JSON(http.StatusOK, gin.H{"config": cfg})
 }
 
 // POST /api/music/config
@@ -148,6 +161,15 @@ func MusicSaveConfig(c *gin.Context) {
 	}
 	if cfg.DefaultMode == "" {
 		cfg.DefaultMode = def.DefaultMode
+	}
+	if cfg.ProxyPass == "" || cfg.ProxyUser == "" {
+		old := loadMusicConfig()
+		if cfg.ProxyPass == "" {
+			cfg.ProxyPass = old.ProxyPass
+		}
+		if cfg.ProxyUser == "" {
+			cfg.ProxyUser = old.ProxyUser
+		}
 	}
 	if err := saveMusicConfig(cfg); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存配置失败"})
@@ -331,7 +353,7 @@ func runDownload(cfg MusicConfig, task *DownloadTask, source string, musicInfo m
 	// 下载走配置的代理（音源地址多半要走代理才通；和引擎验真用的是同一条路）
 	dlClient := &http.Client{}
 	if cfg.ProxyEnabled && cfg.ProxyHost != "" {
-		proxyURL, perr := url.Parse(fmt.Sprintf("http://%s:%d", cfg.ProxyHost, cfg.ProxyPort))
+		proxyURL, perr := url.Parse(musicProxyURL(cfg))
 		if perr == nil {
 			dlClient.Transport = &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 		}
