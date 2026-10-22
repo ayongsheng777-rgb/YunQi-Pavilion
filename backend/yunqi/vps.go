@@ -27,7 +27,18 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const vpsProxyURL = "http://192.168.57.228:7890" // J4125 sing-box，与音乐/AI 共用
+// sharedProxyURL 统一的内网代理地址：优先环境变量，其次 vps_nodes.json 的 proxyUrl
+// （带账号版，2026-10-21 起 sing-box 7890 入口需要 anyong 认证，没密码会 407），
+// 都没有时回退无认证老地址。
+func sharedProxyURL() string {
+	if u := strings.TrimSpace(os.Getenv("YUNQI_PROXY_URL")); u != "" {
+		return u
+	}
+	if cfg := loadVpsConfig(); cfg.ProxyURL != "" {
+		return cfg.ProxyURL
+	}
+	return "http://192.168.57.228:7890"
+}
 
 type VpsNode struct {
 	ID       string `json:"id"`
@@ -40,6 +51,7 @@ type VpsNode struct {
 type vpsConfigFile struct {
 	Nodes       []VpsNode `json:"nodes"`
 	IntervalSec int       `json:"intervalSec,omitempty"`
+	ProxyURL    string    `json:"proxyUrl,omitempty"` // 带账号的内网代理地址（海外面板/AI 共用，只存不回前端）
 }
 
 const (
@@ -172,7 +184,7 @@ func panelClient(useProxy bool) *http.Client {
 		DisableKeepAlives: true,
 	}
 	if useProxy {
-		if pu, err := url.Parse(vpsProxyURL); err == nil {
+		if pu, err := url.Parse(sharedProxyURL()); err == nil {
 			tr.Proxy = http.ProxyURL(pu)
 		}
 	}

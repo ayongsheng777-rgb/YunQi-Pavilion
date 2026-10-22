@@ -28,7 +28,6 @@ import (
 const (
 	defaultAIBaseURL = "https://api.deepseek.com/v1"
 	defaultAIModel   = "deepseek-chat"
-	defaultAIProxy   = "http://192.168.57.228:7890" // J4125 sing-box mixed 代理
 	aiTimeout        = 60 * time.Second
 )
 
@@ -73,7 +72,7 @@ func aiConfigFile() string { return filepath.Join(YunqiDir(), "ai.json") }
 func loadAIConfig() aiConfig {
 	aiConfigMu.Lock()
 	defer aiConfigMu.Unlock()
-	cfg := aiConfig{Provider: "DeepSeek 开放平台", BaseURL: defaultAIBaseURL, Model: defaultAIModel, ProxyURL: defaultAIProxy}
+	cfg := aiConfig{Provider: "DeepSeek 开放平台", BaseURL: defaultAIBaseURL, Model: defaultAIModel, ProxyURL: sharedProxyURL()}
 	_ = utils.ReadJSON(aiConfigFile(), &cfg)
 	if strings.TrimSpace(cfg.BaseURL) == "" {
 		cfg.BaseURL = defaultAIBaseURL
@@ -82,7 +81,7 @@ func loadAIConfig() aiConfig {
 		cfg.Model = defaultAIModel
 	}
 	if strings.TrimSpace(cfg.ProxyURL) == "" {
-		cfg.ProxyURL = defaultAIProxy
+		cfg.ProxyURL = sharedProxyURL()
 	}
 	return cfg
 }
