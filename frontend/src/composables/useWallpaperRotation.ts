@@ -298,7 +298,7 @@ export function useWallpaperRotation() {
     try {
       const proxyRes = await fetch(
         `/api/wallpaper/proxy?url=${encodeURIComponent(apiUrl)}&uuid=lever-${Date.now()}`,
-        { headers: store.getHeaders() as Record<string, string> },
+        { headers: store.getHeaders() as Record<string, string>, cache: "no-store" },
       );
       if (!proxyRes.ok) return false;
       const blob = await proxyRes.blob();
@@ -346,7 +346,7 @@ export function useWallpaperRotation() {
     try {
       const proxyRes = await fetch(
         `/api/wallpaper/proxy?url=${encodeURIComponent(url)}&uuid=auto-update`,
-        { headers: store.getHeaders() as Record<string, string> },
+        { headers: store.getHeaders() as Record<string, string>, cache: "no-store" },
       );
 
       if (!proxyRes.ok) {
@@ -445,11 +445,21 @@ export function useWallpaperRotation() {
     store.markDirty();
   };
 
+  // 定时轮换的一拍：该端配了 API 且启用，就优先从 API 换图；拉不到才本地轮换
+  const rotateTick = async (type: "pc" | "mobile") => {
+    const cfg = type === "pc" ? store.appConfig.wallpaperConfig : store.appConfig.mobileWallpaperConfig;
+    if (cfg?.enabled && (cfg.url || "").trim()) {
+      const ok = await pullApiWallpaper(type, true);
+      if (ok) return;
+    }
+    rotate(type);
+  };
+
   const updatePcInterval = () => {
     if (pcInterval) clearInterval(pcInterval);
     if (store.appConfig.pcRotation) {
       const minutes = Math.max(1, store.appConfig.pcRotationInterval || 30);
-      pcInterval = setInterval(() => rotate("pc"), minutes * 60 * 1000);
+      pcInterval = setInterval(() => { void rotateTick("pc"); }, minutes * 60 * 1000);
     }
   };
 
@@ -457,7 +467,7 @@ export function useWallpaperRotation() {
     if (mobileInterval) clearInterval(mobileInterval);
     if (store.appConfig.mobileRotation) {
       const minutes = Math.max(1, store.appConfig.mobileRotationInterval || 30);
-      mobileInterval = setInterval(() => rotate("mobile"), minutes * 60 * 1000);
+      mobileInterval = setInterval(() => { void rotateTick("mobile"); }, minutes * 60 * 1000);
     }
   };
 

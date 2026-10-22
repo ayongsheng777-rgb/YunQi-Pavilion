@@ -1,16 +1,21 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
+
+	"flatnasgo-backend/config"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/proxy"
@@ -279,6 +284,9 @@ func getSharedProxyClient() (*http.Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	if proxyURL == nil {
+		proxyURL, _ = fileProxyURL()
+	}
 
 	currentURLStr := ""
 	if proxyURL != nil {
@@ -303,38 +311,104 @@ func getSharedProxyClient() (*http.Client, error) {
 	}
 
 	// Rebuild client
-	transport := &http.Transport{
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		IdleConnTimeout:     90 * time.Second,
+	direct := &http.Transport{
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+		DialContext:           (&net.Dialer{Timeout: 6 * time.Second}).DialContext,
+		TLSHandshakeTimeout:   6 * time.Second,
+		ResponseHeaderTimeout: 10 * time.Second,
 	}
 
 	if proxyURL == nil {
-		newClient := &http.Client{Timeout: 20 * time.Second, Transport: transport}
+		newClient := &http.Client{Timeout: 20 * time.Second, Transport: direct}
 		globalProxyClient = newClient
 		globalProxyURLStr = ""
 		return newClient, nil
 	}
 
+	proxyTr := &http.Transport{
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		IdleConnTimeout:     90 * time.Second,
+	}
 	switch proxyURL.Scheme {
 	case "http", "https":
-		transport.Proxy = http.ProxyURL(proxyURL)
+		proxyTr.Proxy = http.ProxyURL(proxyURL)
 	case "socks5", "socks5h":
 		dialer, err := proxy.FromURL(proxyURL, proxy.Direct)
 		if err != nil {
 			return nil, err
 		}
-		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		proxyTr.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return dialer.Dial(network, addr)
 		}
 	default:
 		return nil, fmt.Errorf("unsupported proxy protocol")
 	}
 
-	newClient := &http.Client{Timeout: 20 * time.Second, Transport: transport}
+	// 直连优先、代理兜底：国内接口（壁纸 API、必应等）直连最稳，
+	// 直连失败或被挡（>=400）才走代理，避免"开了代理反而取不到"。
+	newClient := &http.Client{Timeout: 25 * time.Second, Transport: &fallbackTransport{direct: direct, proxy: proxyTr}}
 	globalProxyClient = newClient
 	globalProxyURLStr = currentURLStr
 	return newClient, nil
+}
+
+// fileProxyURL 从云栖阁配置（data/yunqi/vps_nodes.json）读带账号的代理地址，
+// 作为环境变量没设时的兜底代理来源（sing-box 2026-10-21 起需 anyong 认证）。
+func fileProxyURL() (*url.URL, error) {
+	if config.DataDir == "" {
+		return nil, nil
+	}
+	raw, err := os.ReadFile(filepath.Join(config.DataDir, "yunqi", "vps_nodes.json"))
+	if err != nil {
+		return nil, nil
+	}
+	var cfg struct {
+		ProxyURL string `json:"proxyUrl"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil || cfg.ProxyURL == "" {
+		return nil, nil
+	}
+	return parseProxyURL(cfg.ProxyURL)
+}
+
+// fallbackTransport 先直连；失败或状态 >=400 且请求可重放时改走代理重试一次。
+type fallbackTransport struct {
+	direct *http.Transport
+	proxy  *http.Transport
+}
+
+func (t *fallbackTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := t.direct.RoundTrip(req)
+	if err == nil && resp != nil && resp.StatusCode < 400 {
+		return resp, nil
+	}
+	if t.proxy == nil {
+		return resp, err
+	}
+	// 只有可重放的请求才走代理重试（GET/HEAD，或带 GetBody 的请求）
+	if req.Method != http.MethodGet && req.Method != http.MethodHead && req.GetBody == nil {
+		return resp, err
+	}
+	if err == nil && resp != nil {
+		// 直连拿到了 >=400：先把错误页正文存下来，代理也失败时还能原样返回
+		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(buf))
+	}
+	req2 := req.Clone(req.Context())
+	if req.GetBody != nil {
+		if b, e := req.GetBody(); e == nil {
+			req2.Body = b
+		}
+	}
+	resp2, err2 := t.proxy.RoundTrip(req2)
+	if err2 != nil {
+		return resp, err
+	}
+	return resp2, nil
 }
 
 func buildProxyClient() (*http.Client, error) {

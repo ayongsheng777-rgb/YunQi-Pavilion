@@ -110,10 +110,10 @@ const pullWallpaperLever = async () => {
     const cfg = type === "mobile" ? store.appConfig.mobileWallpaperConfig : store.appConfig.wallpaperConfig;
     let done = false;
     if ((cfg?.url || "").trim()) {
+      // 配了 API 就只认 API：拉不到就明确提示并保留当前壁纸，不再偷偷换成本地旧图
       done = await pullApiWallpaper(type, true);
-      if (!done) showLeverHint("API没拉到图，改换本地壁纸");
-    }
-    if (!done) {
+      if (!done) showLeverHint("API接口没拉到图，已保留当前壁纸");
+    } else {
       await store.fetchWallpaperLists();
       const list = type === "mobile" ? store.wallpaperListMobile : store.wallpaperListPc;
       if (list && list.length > 0) {
@@ -121,8 +121,8 @@ const pullWallpaperLever = async () => {
         store.markDirty();
         done = true;
       }
+      if (!done) showLeverHint("没有可用的壁纸");
     }
-    if (!done) showLeverHint("没有可用的壁纸");
   } catch {
     // 换壁纸失败保持安静
   } finally {
