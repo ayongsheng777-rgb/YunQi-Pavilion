@@ -100,7 +100,8 @@ export function useWallpaperRotation() {
   // 判断用户是否已手动切换壁纸：
   // 当前 background 与上次 API 自动设置的路径不一致，说明用户已手动改过
   const userManuallyChangedWallpaper = (type: "pc" | "mobile"): boolean => {
-    const lastApiPath = getStoredApiPath(type);
+    const cfg = type === "pc" ? store.appConfig.wallpaperConfig : store.appConfig.mobileWallpaperConfig;
+    const lastApiPath = cfg?.lastPath || getStoredApiPath(type);
     if (!lastApiPath) return false; // 还没记录过 API 路径，不算"用户改了"
     const currentBg = stripQueryParams(
       type === "pc" ? store.appConfig.background || "" : store.appConfig.mobileBackground || "",
@@ -184,22 +185,6 @@ export function useWallpaperRotation() {
     return !isSameLocalDay(lastUpdated, Date.now());
   };
 
-  const disableConfigEnabled = (type: "pc" | "mobile") => {
-    if (type === "pc" && store.appConfig.wallpaperConfig) {
-      store.appConfig.wallpaperConfig = {
-        ...store.appConfig.wallpaperConfig,
-        enabled: false,
-      };
-    } else if (type === "mobile" && store.appConfig.mobileWallpaperConfig) {
-      store.appConfig.mobileWallpaperConfig = {
-        ...store.appConfig.mobileWallpaperConfig,
-        enabled: false,
-      };
-    }
-    store.markDirty();
-    console.info(`[Wallpaper] Disabled API auto-update for ${type} (user manually changed)`);
-  };
-
   const checkAndUpdateApiWallpaper = async () => {
     // 未登录时不执行（避免上传失败导致计数堆积）
     if (!isLoggedIn.value) {
@@ -219,10 +204,8 @@ export function useWallpaperRotation() {
     const tasks: Array<{ url: string; lastUpdated: number; type: "pc" | "mobile" }> = [];
 
     if (pcConfig?.enabled && pcConfig.url) {
-      // 双重保险：检测用户是否已手动切换了壁纸
-      if (userManuallyChangedWallpaper("pc")) {
-        disableConfigEnabled("pc");
-      } else {
+      // 用户手动选过别的壁纸：本轮跳过即可，绝不关开关（设置要存得住）
+      if (!userManuallyChangedWallpaper("pc")) {
         const lastUpdated = pcConfig.lastUpdated || 0;
         if (shouldUpdateWallpaper(lastUpdated)) {
           tasks.push({ url: pcConfig.url, lastUpdated, type: "pc" });
@@ -231,9 +214,7 @@ export function useWallpaperRotation() {
     }
 
     if (mobileConfig?.enabled && mobileConfig.url) {
-      if (userManuallyChangedWallpaper("mobile")) {
-        disableConfigEnabled("mobile");
-      } else {
+      if (!userManuallyChangedWallpaper("mobile")) {
         const lastUpdated = mobileConfig.lastUpdated || 0;
         if (shouldUpdateWallpaper(lastUpdated)) {
           tasks.push({ url: mobileConfig.url, lastUpdated, type: "mobile" });
@@ -319,12 +300,12 @@ export function useWallpaperRotation() {
         if (type === "pc") {
           store.appConfig.background = uploadedPath;
           if (store.appConfig.wallpaperConfig) {
-            store.appConfig.wallpaperConfig = { ...store.appConfig.wallpaperConfig, lastUpdated: Date.now() };
+            store.appConfig.wallpaperConfig = { ...store.appConfig.wallpaperConfig, lastUpdated: Date.now(), lastPath: uploadedPath };
           }
         } else {
           store.appConfig.mobileBackground = uploadedPath;
           if (store.appConfig.mobileWallpaperConfig) {
-            store.appConfig.mobileWallpaperConfig = { ...store.appConfig.mobileWallpaperConfig, lastUpdated: Date.now() };
+            store.appConfig.mobileWallpaperConfig = { ...store.appConfig.mobileWallpaperConfig, lastUpdated: Date.now(), lastPath: uploadedPath };
           }
         }
         setStoredApiPath(type, uploadedPath);
@@ -404,12 +385,14 @@ export function useWallpaperRotation() {
           store.appConfig.wallpaperConfig = {
             ...store.appConfig.wallpaperConfig!,
             lastUpdated: Date.now(),
+            lastPath: uploadedPath,
           };
         } else {
           store.appConfig.mobileBackground = uploadedPath;
           store.appConfig.mobileWallpaperConfig = {
             ...store.appConfig.mobileWallpaperConfig!,
             lastUpdated: Date.now(),
+            lastPath: uploadedPath,
           };
         }
         // 记录 API 自动设置的路径，用于下次检测"用户是否手动改过"

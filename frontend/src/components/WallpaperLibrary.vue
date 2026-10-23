@@ -112,23 +112,10 @@ const setWallpaper = (name: string, type: "pc" | "mobile") => {
   const url = getWallpaperPath(name, type);
   if (type === "pc") {
     store.appConfig.background = url;
-    // 手动选择本地壁纸时，关闭 API 自动更新调度器（避免覆盖用户选择）
-    if (store.appConfig.wallpaperConfig?.enabled) {
-      store.appConfig.wallpaperConfig = {
-        ...store.appConfig.wallpaperConfig,
-        enabled: false,
-      };
-      store.markDirty();
-    }
+    store.markDirty();
   } else {
     store.appConfig.mobileBackground = url;
-    if (store.appConfig.mobileWallpaperConfig?.enabled) {
-      store.appConfig.mobileWallpaperConfig = {
-        ...store.appConfig.mobileWallpaperConfig,
-        enabled: false,
-      };
-      store.markDirty();
-    }
+    store.markDirty();
   }
   return true;
 };
@@ -338,21 +325,8 @@ const executeDelete = async (name: string, type: "pc" | "mobile") => {
     const defaultUrl = getWallpaperPath(DEFAULT_WALLPAPER, type);
     if (type === "pc") {
       store.appConfig.background = defaultUrl;
-      // 删除当前壁纸并回退到默认时，同时停用 API 自动更新避免立即被覆盖
-      if (store.appConfig.wallpaperConfig?.enabled) {
-        store.appConfig.wallpaperConfig = {
-          ...store.appConfig.wallpaperConfig,
-          enabled: false,
-        };
-      }
     } else {
       store.appConfig.mobileBackground = defaultUrl;
-      if (store.appConfig.mobileWallpaperConfig?.enabled) {
-        store.appConfig.mobileWallpaperConfig = {
-          ...store.appConfig.mobileWallpaperConfig,
-          enabled: false,
-        };
-      }
     }
     store.markDirty();
   }
@@ -512,6 +486,18 @@ watch(
     cleanupPreview();
   },
 );
+
+// 显式停用 API 自动更新（代替过去各种"偷偷关开关"的行为）
+const disableApiAutoUpdate = () => {
+  if (store.appConfig.wallpaperConfig) {
+    store.appConfig.wallpaperConfig = { ...store.appConfig.wallpaperConfig, enabled: false };
+  }
+  if (store.appConfig.mobileWallpaperConfig) {
+    store.appConfig.mobileWallpaperConfig = { ...store.appConfig.mobileWallpaperConfig, enabled: false };
+  }
+  store.markDirty();
+  alert("已停用 API 自动更新");
+};
 
 const fetchPreviewImage = async (url: string, options?: { forceRefresh?: boolean }) => {
   const normalizedUrl = url.trim();
@@ -746,17 +732,16 @@ const applyCustomApi = async (type: "pc" | "mobile", apply: boolean = true) => {
 
     // Now apply configuration
     if (apply) {
-      const preset = presetApis.find(
-        (p) => p.url === currentGeneratorUrl.value || p.url === sourceUrl,
-      );
-      const enableScheduler = preset ? preset.autoUpdate : false;
-      const urlToSave = enableScheduler ? (currentGeneratorUrl.value || sourceUrl) : backgroundPath;
+      // 存的一定是 API 地址本身（旧逻辑把非预置接口存成了本地图路径、还关掉开关，
+      // 导致"API 设置存不住、换壁纸在本地库里打转"）
+      const urlToSave = currentGeneratorUrl.value || sourceUrl;
 
       const config = {
         type: "api" as const,
         url: urlToSave,
-        enabled: !!enableScheduler,
+        enabled: true,
         lastUpdated: Date.now(),
+        lastPath: backgroundPath,
       };
 
       if (type === "pc") {
@@ -767,7 +752,7 @@ const applyCustomApi = async (type: "pc" | "mobile", apply: boolean = true) => {
         store.appConfig.mobileWallpaperConfig = config;
       }
       // 记录 API 自动设置的路径，使 useWallpaperRotation 能识别用户后续是否手动切换
-      if (enableScheduler && backgroundPath) {
+      if (backgroundPath) {
         try {
           const key =
             type === "pc"
@@ -1451,6 +1436,17 @@ onBeforeUnmount(() => {
                       class="w-4 h-4 border-2 border-gray-400 border-t-gray-600 rounded-full animate-spin"
                     ></span>
                     {{ applyingApi ? "保存中..." : "应用到 手机壁纸" }}
+                  </button>
+                </div>
+                <div
+                  v-if="store.appConfig.wallpaperConfig?.enabled || store.appConfig.mobileWallpaperConfig?.enabled"
+                  class="pt-1 text-right"
+                >
+                  <button
+                    @click="disableApiAutoUpdate"
+                    class="text-xs text-gray-400 hover:text-red-500 underline"
+                  >
+                    停用 API 自动更新
                   </button>
                 </div>
               </div>

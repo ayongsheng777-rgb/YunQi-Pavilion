@@ -4077,24 +4077,24 @@ onUnmounted(() => {
                       !item.description1 && !item.description2 && !item.description3
                         ? 'text-left'
                         : 'text-xs',
-                      'truncate font-medium leading-tight flex justify-between items-center',
+                      'font-medium leading-tight flex justify-between items-center',
                     ]"
                     :style="{
                       color:
                         item.titleColor ||
-                        (item.backgroundImage || group.backgroundImage
-                          ? '#ffffff'
-                          : group.cardTitleColor || store.appConfig.cardTitleColor || '#111827'),
+                        group.cardTitleColor ||
+                        store.appConfig.cardTitleColor ||
+                        (store.appConfig.background ? '#ffffff' : '#111827'),
                       fontSize: group.cardTitleSize ? group.cardTitleSize + 'px' : undefined,
                       textShadow:
-                        item.backgroundImage || group.backgroundImage
-                          ? '0 1px 2px rgba(0,0,0,0.8)'
+                        item.backgroundImage || group.backgroundImage || store.appConfig.background
+                          ? '0 1px 3px rgba(0,0,0,0.9)'
                           : 'none',
                       opacity:
                         item.description1 || (!item.description2 && !item.description3) ? 1 : 0.5,
                     }"
                   >
-                    <span class="truncate flex-1">{{ item.description1 || item.title }}</span>
+                    <span class="flex-1 break-words whitespace-normal">{{ item.description1 || item.title }}</span>
                   </div>
 
                   <!-- Docker Stats Info -->
@@ -4173,18 +4173,18 @@ onUnmounted(() => {
                 <!-- Vertical Mode: Standard Title -->
                 <span
                   v-else
-                  class="font-medium truncate relative z-10"
-                  :class="'text-center px-2 w-full'"
+                  class="font-medium relative z-10 break-words whitespace-normal leading-snug"
+                  :class="'text-center px-1 w-full'"
                   :style="{
                     color:
                       item.titleColor ||
-                      (item.backgroundImage || group.backgroundImage
-                        ? '#ffffff'
-                        : group.cardTitleColor || store.appConfig.cardTitleColor || '#111827'),
+                      group.cardTitleColor ||
+                      store.appConfig.cardTitleColor ||
+                      (store.appConfig.background ? '#ffffff' : '#111827'),
                     fontSize: group.cardTitleSize ? group.cardTitleSize + 'px' : undefined,
                     textShadow:
-                      item.backgroundImage || group.backgroundImage
-                        ? '0 2px 4px rgba(0,0,0,0.8)'
+                      item.backgroundImage || group.backgroundImage || store.appConfig.background
+                        ? '0 1px 3px rgba(0,0,0,0.9), 0 0 8px rgba(0,0,0,0.45)'
                         : 'none',
                   }"
                 >

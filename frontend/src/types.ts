@@ -81,6 +81,7 @@ export interface WallpaperConfig {
   url: string;
   enabled: boolean;
   lastUpdated?: number;
+  lastPath?: string; // 上次由 API 设置的壁纸路径（存配置里跨设备同步，防误判"用户手动改过"）
 }
 
 export interface AppConfig {
