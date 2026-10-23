@@ -18,12 +18,13 @@ export const useGroupsStore = defineStore("groups", () => {
     });
   };
 
-  const addGroup = () => {
+  const addGroup = (): string | undefined => {
     try {
       const id = Date.now().toString();
       const index = groups.value.length + 1;
       const title = `新建分组 ${index}`;
       groups.value.push({ id, title, items: [] });
+      return id;
     } catch (e) {
       console.error(e);
     }

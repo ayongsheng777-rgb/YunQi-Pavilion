@@ -743,6 +743,8 @@ export const useSyncStore = defineStore("sync", () => {
   const markDirtyIfActive = () => { if (!isInitializing && !isApplyingServerData) saveStore.markDirty(); };
   watch(configStore.appConfig, markDirtyIfActive, { deep: true });
   watch(widgetsStore.widgets, markDirtyIfActive, { deep: true });
+  // 分组以前没人监视：新建/改名/样式改完都不触发保存，刷新就还原（看起来像"写死了"）
+  watch(groupsStore.groups, markDirtyIfActive, { deep: true });
   watch(rssFeeds, markDirtyIfActive, { deep: true });
   watch(rssCategories, markDirtyIfActive, { deep: true });
   watch(() => saveStore.hasUnsavedChanges, (dirty, wasDirty) => {

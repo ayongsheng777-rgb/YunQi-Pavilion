@@ -2217,10 +2217,31 @@ const openEditOrLogin = () => {
   }
 };
 
-// const updateGroupName = (id: string, e: Event) => {
-//   const val = (e.target as HTMLElement).innerText
-//   store.updateGroupTitle(id, val)
-// }
+// ---- 分组改名（编辑模式下点 ✎ 或双击标题） ----
+const editingGroupId = ref<string | null>(null);
+const editingGroupTitle = ref("");
+const startEditGroupTitle = (group: NavGroup) => {
+  editingGroupId.value = group.id;
+  editingGroupTitle.value = group.title;
+  nextTick(() => {
+    const el = document.querySelector<HTMLInputElement>(".group-title-input");
+    el?.focus();
+    el?.select();
+  });
+};
+const commitGroupTitle = (id: string) => {
+  if (editingGroupId.value !== id) return;
+  const val = editingGroupTitle.value.trim();
+  editingGroupId.value = null;
+  if (val) store.updateGroupTitle(id, val);
+};
+const onAddGroup = () => {
+  const id = store.addGroup();
+  if (id) {
+    const g = store.groups.find((x) => x.id === id);
+    if (g) startEditGroupTitle(g);
+  }
+};
 
 const onGroupItemsChange = (groupId: string, newItems: NavItem[]) => {
   const group = store.groups.find((g) => g.id === groupId);
@@ -3662,7 +3683,7 @@ onUnmounted(() => {
           <div v-if="store.isLogged && isEditMode" class="flex justify-center mb-4 gap-4">
             <button
               data-testid="add-group-btn"
-              @click="store.addGroup"
+              @click="onAddGroup"
               class="bg-white/10 hover:bg-white/20 text-white backdrop-blur border border-white/20 px-6 py-2 rounded-full font-bold transition-all flex items-center gap-2 shadow-lg"
             >
               <span>➕</span> 新建分组
@@ -3698,7 +3719,17 @@ onUnmounted(() => {
               >
                 ⋮⋮
               </div>
+              <input
+                v-if="isEditMode && editingGroupId === group.id"
+                v-model="editingGroupTitle"
+                class="group-title-input text-xl font-bold px-2 rounded bg-white/15 text-white outline-none border border-white/40 max-w-[240px]"
+                @keyup.enter="commitGroupTitle(group.id)"
+                @keyup.esc="editingGroupId = null"
+                @blur="commitGroupTitle(group.id)"
+                @click.stop
+              />
               <h2
+                v-else
                 class="text-xl font-bold shadow-text px-2 rounded transition-colors outline-none"
                 :style="{
                   color:
@@ -3706,9 +3737,31 @@ onUnmounted(() => {
                     store.appConfig.groupTitleColor ||
                     'var(--group-title-color)',
                 }"
+                @dblclick="isEditMode && startEditGroupTitle(group)"
               >
                 {{ group.title }}
               </h2>
+              <button
+                v-if="store.isLogged && isEditMode"
+                @click.stop="startEditGroupTitle(group)"
+                class="w-7 h-7 rounded-full bg-white/10 hover:bg-white/30 text-white flex items-center justify-center transition-all shadow-sm border border-white/10"
+                title="重命名分组"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  class="h-3.5 w-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"
+                  />
+                </svg>
+              </button>
 
               <div class="flex items-center gap-2">
                 <button
