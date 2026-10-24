@@ -46,6 +46,7 @@ export function createDefaultWidgetList(isLoggedIn: boolean): WidgetConfig[] {
     { id: "todo", type: "todo", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
     { id: "checkin", type: "checkin", enable: true, colSpan: 1, rowSpan: 1, isPublic: true },
     { id: "itdaily", type: "itdaily", enable: true, colSpan: 1, rowSpan: 1, isPublic: false },
+    { id: "horizon", type: "horizon", enable: true, colSpan: 1, rowSpan: 1, isPublic: false },
     {
       id: "calculator",
       type: "calculator",
