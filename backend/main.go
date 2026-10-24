@@ -431,14 +431,6 @@ func main() {
 		itdaily.GET("/latest", yunqi.ITDailyLatest)
 	}
 
-	// 模块 1b2：Horizon 日报（查询走 JWT，推送走 OpenAPI token 供 OECT 调用）
-	horizon := api.Group("/horizon")
-	horizon.Use(middleware.AuthMiddleware())
-	{
-		horizon.GET("/list", yunqi.HorizonList)
-		horizon.GET("/day", yunqi.HorizonDay)
-	}
-
 	// 模块 1c：音乐（LX Music 集成，代理同项目的 music-engine 服务 + 下载到 NAS）
 	music := api.Group("/music")
 	music.Use(middleware.AuthMiddleware())
@@ -513,7 +505,6 @@ func main() {
 		openapi.GET("/categories", yunqi.OpenAPIListCategories)
 		openapi.GET("/version", yunqi.OpenAPIVersion)
 		openapi.POST("/itdaily/push", yunqi.ITDailyPush)
-		openapi.POST("/horizon/push", yunqi.HorizonPush)
 	}
 
 	// 模块 3：MCP 服务端（token 鉴权，JSON-RPC 2.0 over HTTP）
