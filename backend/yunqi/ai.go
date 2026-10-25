@@ -42,7 +42,7 @@ type aiProviderPreset struct {
 }
 
 var aiProviderPresets = []aiProviderPreset{
-	{Name: "Requesty（免费）", BaseURL: "https://router.requesty.ai/v1", Model: "nvidia/nemotron-3-super-120b-a12b", NeedKey: true, KeyURL: "https://www.requesty.ai/free-models", Homepage: "https://www.requesty.ai"},
+	{Name: "Requesty（免费）", BaseURL: "https://router.requesty.ai/v1", Model: "google/gemma-4-31b-it", NeedKey: true, KeyURL: "https://www.requesty.ai/free-models", Homepage: "https://www.requesty.ai"},
 	{Name: "DeepSeek 开放平台", BaseURL: "https://api.deepseek.com/v1", Model: "deepseek-chat", NeedKey: true, KeyURL: "https://platform.deepseek.com/api_keys", Homepage: "https://platform.deepseek.com"},
 	{Name: "Kimi（月之暗面）", BaseURL: "https://api.moonshot.cn/v1", Model: "kimi-k2", NeedKey: true, KeyURL: "https://platform.moonshot.cn/console/api-keys", Homepage: "https://platform.moonshot.cn"},
 	{Name: "阿里云百炼", BaseURL: "https://dashscope.aliyuncs.com/compatible-mode/v1", Model: "qwen-plus", NeedKey: true, KeyURL: "https://bailian.console.aliyun.com/?apiKey=1#/api-key", Homepage: "https://bailian.console.aliyun.com"},
