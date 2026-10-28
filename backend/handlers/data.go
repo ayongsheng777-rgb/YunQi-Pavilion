@@ -349,6 +349,10 @@ func GetData(c *gin.Context) {
 		dataMod = userInfo.ModTime()
 		dataSize = userInfo.Size()
 	}
+	// 备忘录文件的时间也要算进缓存/ETag，否则备忘录改了还回旧全量数据。
+	if memoMod := latestMemoModTime(username); memoMod.After(dataMod) {
+		dataMod = memoMod
+	}
 	etag := ""
 	if userStatErr == nil {
 		etag = buildGetDataETag(username, userFile, isGuest, dataMod, sysMod, dataSize)
@@ -631,6 +635,24 @@ func GetWidgetsBatch(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"success": true, "widgets": result})
+}
+
+// latestMemoModTime 返回该用户所有备忘录文件里最新的修改时间。
+// 备忘录是独立文件，改备忘录不会改 data.json，所以 GetData 的缓存/ETag
+// 只看 data.json 时间时，登录拉全量数据会一直拿到旧备忘录。
+// 把这个时间并进 dataMod，备忘录一改，全量缓存就失效、重新对齐。
+func latestMemoModTime(username string) time.Time {
+	matches, err := filepath.Glob(filepath.Join(config.DataDir, "memo_"+sanitizeMemoID(username)+"_*.json"))
+	if err != nil {
+		return time.Time{}
+	}
+	var latest time.Time
+	for _, f := range matches {
+		if info, err := os.Stat(f); err == nil && info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+	}
+	return latest
 }
 
 func sanitizeMemoID(raw string) string {

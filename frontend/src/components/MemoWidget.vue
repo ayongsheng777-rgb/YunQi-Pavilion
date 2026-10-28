@@ -47,6 +47,9 @@ const conflictState = ref<{ hasConflict: boolean; remoteData: WidgetConfig["data
   remoteData: null,
 });
 const serverTs = ref(0);
+// 程序改 localData/mode（打开时读本地缓存、收到远程更新）时，绝不能触发自动回存，
+// 否则旧本地内容会被当成用户新改动存回服务器。watch 里按这次变更是否被抑制来决定。
+let suppressAutoSave = false;
 const lastInputAt = ref(0);
 const isBroadcasting = ref(false);
 const isPageVisible = ref(document.visibilityState === "visible");
@@ -376,31 +379,9 @@ const saveToServer = async (immediate = false, keepalive = false) => {
           return;
         }
 
-        if (remoteParsed.serverTs) {
-          serverTs.value = remoteParsed.serverTs;
-          const retryPayload = buildPayload();
-          const retryRequestID = createSaveRequestID(id, retryPayload);
-          const retryRes = await requestMemoSave(id, retryPayload, keepalive, retryRequestID);
-          const retryParsedBody = await parseJsonBody(retryRes);
-          const retryData = retryParsedBody.isJson
-            ? (retryParsedBody.data as { data?: WidgetConfig["data"] } | null)
-            : null;
-          if (retryRes.ok && retryParsedBody.isJson) {
-            if (retryData?.data) {
-              applyRemotePayload(retryData.data);
-            }
-            conflictState.value = { hasConflict: false, remoteData: null };
-            syncState.value = "idle";
-            showToast.value = false;
-            saveRetryCount = 0;
-            return;
-          }
-          if (!retryParsedBody.isJson) {
-            markSaveError("保存失败：服务返回异常页面");
-            return;
-          }
-        }
-
+        // 绝不能在这里自动重试覆盖：本地是旧内容，远程是新内容，
+        // 用远程的新版本号把旧内容再存一次，就会把 NAS 上的新备忘录盖掉，
+        // 两台电脑来回翻、永远对不上。下面直接走冲突提示，让用户选。
         const signature = buildConflictSignature(
           remoteParsed.content,
           remoteParsed.serverTs,
@@ -514,11 +495,17 @@ const applyRemotePayload = (payload: WidgetConfig["data"], force = false) => {
     return;
   }
   if (parsed.content !== localData.value || parsed.serverTs !== serverTs.value) {
+    // 程序改值，不是用户打字：抑制这次变更触发的自动回存，
+    // 否则收到的远程内容会被当成新改动再存回去。
+    suppressAutoSave = true;
     localData.value = parsed.content;
     serverTs.value = parsed.serverTs;
+    setTimeout(() => { suppressAutoSave = false; }, 0);
   }
   if (parsed.mode === "simple" || parsed.mode === "rich") {
+    suppressAutoSave = true;
     mode.value = parsed.mode;
+    setTimeout(() => { suppressAutoSave = false; }, 0);
   }
 };
 
@@ -535,12 +522,8 @@ const pollRemote = async (force = false) => {
   const id = props.widget.id;
   if (!id) return;
   
-  // Fix Risk 2: Skip polling if WebSocket is connected and healthy
-  if (preferSocketSync.value && store.isConnected && !force) {
-    scheduleNextPoll();
-    return;
-  }
-
+  // 不再因为在线推送正常就跳过轮询：推送丢一次就一直旧，
+  // HTTP 轮询是兜底，成本只是一次 GET /api/memo，留着最稳。
   if (import.meta.env.MODE === "test") return;
   try {
     const res = await fetchWithTimeout(
@@ -878,6 +861,10 @@ const handleBeforeUnload = () => {
 };
 
 // Initial Load
+// 打开时先抑制自动回存：本机缓存是旧内容，读出来就自动存回会把服务器新内容盖掉。
+// 解除抑制放在加载完成后的 setTimeout 里（宏任务），watch 回调（微任务）一定先跑到，
+// 所以加载引起的变更都会被记为“被抑制”，不会自动存回服务器。
+suppressAutoSave = true;
 loadFromIndexedDB().then(async () => {
   if (!localData.value && props.widget.data) {
      if (typeof props.widget.data === "string") {
@@ -907,6 +894,8 @@ loadFromIndexedDB().then(async () => {
     mode.value = "rich";
   }
   await refreshVersions();
+  // 加载完成，下一轮宏任务再解除抑制：加载引起的 watch 回调已先跑完并被记为抑制。
+  setTimeout(() => { suppressAutoSave = false; }, 0);
 });
 
 // Auto-save wrapper (optional, but requested "Persistent Button" behavior implies manual action is the focus, 
@@ -915,9 +904,12 @@ loadFromIndexedDB().then(async () => {
 let autoSaveTimer: ReturnType<typeof setTimeout> | undefined;
 watch([localData, mode], () => {
   clearTimeout(autoSaveTimer);
+  // 按变更发生时是否被抑制来决定：程序改值（打开加载、远程更新）只存本机，
+  // 绝不自动存回服务器；只有用户打字改的值才自动存服务器。
+  const wasSuppressed = suppressAutoSave;
   autoSaveTimer = setTimeout(() => {
     saveToIndexedDB();
-    saveToServer();
+    if (!wasSuppressed) saveToServer();
   }, autoSaveDelay.value);
 });
 

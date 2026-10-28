@@ -409,6 +409,31 @@ const lockButtonLabel = computed(() =>
 );
 
 const customApiUrl = ref("");
+// 当前已保存、正在使用的 API 壁纸（不是输入框里的草稿）：
+// PC 和手机各一份配置，启用哪份就显示哪份的地址，两份都启用就优先 PC。
+// 地址栏要持久显示的就是这个来源，而不是背景图那条本地路径。
+const activeApiConfig = computed(() => {
+  const pc = store.appConfig.wallpaperConfig;
+  const mobile = store.appConfig.mobileWallpaperConfig;
+  const sides: string[] = [];
+  if (pc?.enabled && pc.url) sides.push("PC");
+  if (mobile?.enabled && mobile.url) sides.push("手机");
+  const url =
+    (pc?.enabled && pc.url) || (mobile?.enabled && mobile.url) || pc?.url || mobile?.url || "";
+  return { url, sides, enabled: sides.length > 0 };
+});
+// 打开壁纸库、或配置刚从服务器拉回来时，把已保存的 API 地址抄回地址栏，
+// 而不是只在背景图是 http 时才抄一次（应用 API 后背景会变成 /backgrounds 本地路径，
+// 旧逻辑就再也抄不到地址，地址栏永远是空的）。
+const syncApiUrlFromConfig = () => {
+  if (activeApiConfig.value.url) customApiUrl.value = activeApiConfig.value.url;
+};
+watch(
+  () => activeApiConfig.value.url,
+  (url) => {
+    if (url && !customApiUrl.value) customApiUrl.value = url;
+  },
+);
 const currentGeneratorUrl = ref("");
 const resolvingUrl = ref(false);
 const previewBlob = ref<Blob | null>(null);
@@ -481,6 +506,8 @@ watch(
   (visible) => {
     if (visible) {
       fetchWallpapers();
+      // 每次打开都以已保存的 API 地址为准，避免上次填的草稿或空值盖住它。
+      syncApiUrlFromConfig();
       return;
     }
     cleanupPreview();
@@ -768,6 +795,8 @@ const applyCustomApi = async (type: "pc" | "mobile", apply: boolean = true) => {
       }
       store.refreshResources();
       store.markDirty();
+      // 应用完就把地址栏定格在刚保存的 API 地址上，别让它再回到空或本地路径。
+      customApiUrl.value = urlToSave;
       alert("设置成功");
     } else {
       if (uploadedFilename) {
@@ -795,7 +824,9 @@ const applyCustomApi = async (type: "pc" | "mobile", apply: boolean = true) => {
 
 onMounted(() => {
   fetchWallpapers();
-  if (store.appConfig.background?.startsWith("http")) {
+  // 已保存的 API 地址优先；没有才退回旧逻辑（背景图本身是 http 时抄它）。
+  syncApiUrlFromConfig();
+  if (!customApiUrl.value && store.appConfig.background?.startsWith("http")) {
     previewSourceUrl.value = store.appConfig.background;
     customApiUrl.value = store.appConfig.background;
     previewResolvedUrl.value = store.appConfig.background;
@@ -1379,6 +1410,16 @@ onBeforeUnmount(() => {
                   </div>
                 </div>
 
+                <!-- 当前正在使用的 API：从已保存的配置读，不是输入框草稿， -->
+                <!-- 换壁纸、刷新页面、换电脑打开都一直显示，显眼提示当前走的是 API。 -->
+                <div
+                  v-if="activeApiConfig.enabled"
+                  class="bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-3 py-2 text-xs leading-relaxed break-all"
+                >
+                  ✅ 当前正在使用 API 壁纸更换（{{ activeApiConfig.sides.join("、") }}）：{{
+                    activeApiConfig.url
+                  }}
+                </div>
                 <div>
                   <label class="block text-xs font-medium text-gray-600 mb-2"
                     >图片 URL / API 地址</label
