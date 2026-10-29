@@ -50,6 +50,14 @@ const serverTs = ref(0);
 // 程序改 localData/mode（打开时读本地缓存、收到远程更新）时，绝不能触发自动回存，
 // 否则旧本地内容会被当成用户新改动存回服务器。watch 里按这次变更是否被抑制来决定。
 let suppressAutoSave = false;
+// 服务器最后确认过的内容：点进点出、关闭页面这类“顺手保存”只有在本地
+// 真的跟这份不一样时才存，否则空白框点一下就会把空内容存上服务器，
+// 把别的电脑上存好的那份盖掉。用户主动改动（打字、切换模式、恢复版本、
+// 新建）走的都是显式保存，不受这条限制。
+let lastConfirmedContent = "";
+let lastConfirmedMode: "simple" | "rich" = "simple";
+const hasUnsyncedEdits = () =>
+  localData.value !== lastConfirmedContent || mode.value !== lastConfirmedMode;
 const lastInputAt = ref(0);
 const isBroadcasting = ref(false);
 const isPageVisible = ref(document.visibilityState === "visible");
@@ -500,11 +508,13 @@ const applyRemotePayload = (payload: WidgetConfig["data"], force = false) => {
     suppressAutoSave = true;
     localData.value = parsed.content;
     serverTs.value = parsed.serverTs;
+    lastConfirmedContent = parsed.content;
     setTimeout(() => { suppressAutoSave = false; }, 0);
   }
   if (parsed.mode === "simple" || parsed.mode === "rich") {
     suppressAutoSave = true;
     mode.value = parsed.mode;
+    lastConfirmedMode = parsed.mode;
     setTimeout(() => { suppressAutoSave = false; }, 0);
   }
 };
@@ -712,7 +722,8 @@ const handleFocus = () => {
 const handleBlur = () => {
   isEditing.value = false;
   updateSyncMode();
-  saveToServer(true);
+  // 只点进点出、一个字没改：绝不存。否则空白框点一下就把空内容存上服务器。
+  if (hasUnsyncedEdits()) saveToServer(true);
 };
 
 const handleInputActivity = () => {
@@ -857,7 +868,7 @@ const handleBeforeUnload = () => {
   }
   // Try to persist locally as well (fire and forget)
   saveToIndexedDB();
-  saveToServer(true, true);
+  if (hasUnsyncedEdits()) saveToServer(true, true);
 };
 
 // Initial Load
@@ -866,6 +877,15 @@ const handleBeforeUnload = () => {
 // 所以加载引起的变更都会被记为“被抑制”，不会自动存回服务器。
 suppressAutoSave = true;
 loadFromIndexedDB().then(async () => {
+  // 页面打开时服务器快照就是“最后确认过的内容”，顺手保存拿它比对，
+  // 本机旧缓存跟它不一样时，点出框也不直接存旧缓存（会走 409 冲突提示）。
+  if (props.widget.data) {
+    const serverSnapshot = parsePayload(props.widget.data);
+    lastConfirmedContent = serverSnapshot.content;
+    if (serverSnapshot.mode === "simple" || serverSnapshot.mode === "rich") {
+      lastConfirmedMode = serverSnapshot.mode;
+    }
+  }
   if (!localData.value && props.widget.data) {
      if (typeof props.widget.data === "string") {
         localData.value = props.widget.data;
