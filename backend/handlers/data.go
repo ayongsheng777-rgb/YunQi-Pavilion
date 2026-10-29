@@ -655,6 +655,28 @@ func latestMemoModTime(username string) time.Time {
 	return latest
 }
 
+// logMemoEvent 记备忘录操作日志：保存成功和版本冲突都记。
+// 只记时间、账号、组件、新旧版本号、内容长度、模式、是否为空、来源地址，
+// 不记完整内容。容器日志（docker logs）里能看到，同时追加到 NAS 数据目录
+// 下的 memo_audit.log，容器重建后还在，下次再出现“被盖掉”就能直接定位
+// 是什么时候、哪个账号、哪个组件、从哪个版本号盖到哪个版本号。
+// 注意：走 Cloudflare 隧道进来时，来源地址可能是隧道地址，不一定是设备真实 IP，
+// 时间和版本号才是定责的关键。
+func logMemoEvent(kind, username, widgetID string, oldTS, newTS int64, contentLen int, mode string, clientIP string) {
+	line := fmt.Sprintf("%s %s user=%s widget=%s old_ts=%d new_ts=%d len=%d mode=%s empty=%v ip=%s",
+		time.Now().Format("2006-01-02 15:04:05"), kind, username, widgetID, oldTS, newTS, contentLen, mode, contentLen == 0, clientIP)
+	log.Printf("[memo] %s", line)
+	auditFile := filepath.Join(config.DataDir, "memo_audit.log")
+	// 简单轮转：超过 2MB 就把旧的挪成 .old，避免无限变大。
+	if info, err := os.Stat(auditFile); err == nil && info.Size() > 2*1024*1024 {
+		_ = os.Rename(auditFile, auditFile+".old")
+	}
+	if f, err := os.OpenFile(auditFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600); err == nil {
+		_, _ = f.WriteString(line + "\n")
+		_ = f.Close()
+	}
+}
+
 func sanitizeMemoID(raw string) string {
 	var b strings.Builder
 	for _, r := range raw {
@@ -860,6 +882,7 @@ func SaveMemo(c *gin.Context) {
 		return
 	}
 	if *payload.ServerTS != current.ServerTS {
+		logMemoEvent("conflict", username, widgetID, current.ServerTS, *payload.ServerTS, len(payload.Content), current.Mode, c.ClientIP())
 		body := gin.H{
 			"error": "Version conflict",
 			"data":  current,
@@ -893,6 +916,7 @@ func SaveMemo(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save memo"})
 		return
 	}
+	logMemoEvent("save", username, widgetID, current.ServerTS, nextTS, len(payload.Content), nextMode, c.ClientIP())
 
 	if socketServer != nil {
 		socketServer.BroadcastToRoom("/", SocketUserRoom(username), "memo:updated", map[string]interface{}{
