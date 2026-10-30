@@ -39,6 +39,7 @@ const syncState = ref<'idle' | 'inputting' | 'cooldown' | 'broadcasting' | 'offl
 const mode = ref<"simple" | "rich">("simple");
 const localData = ref(""); // Stores HTML for rich mode or text for simple mode
 const editorRef = ref<InstanceType<typeof MemoEditor> | null>(null);
+const simpleEditorRef = ref<HTMLTextAreaElement | null>(null);
 const isEditing = ref(false);
 const isSaving = ref(false); // Fix Risk 3: Track saving status
 const pendingSave = ref(false); // Track if a save was requested while saving
@@ -139,12 +140,17 @@ const preferSocketSync = computed(() => store.isLanModeInited && store.effective
 type VersionOption = {
   id: string;
   label: string;
-  kind: "new" | "history";
+  kind: "new" | "history" | "item";
   version?: MemoVersion;
 };
 
+// 版本管理是唯一的切换入口：下拉选项 = 全部已存标题（经搜索过滤）+ 历史版本，
+// 两者共用同一套“选中 → 加载正文”回调 selectVersionOption。
 const versionOptions = computed<VersionOption[]>(() => {
   const options: VersionOption[] = [{ id: "new", label: "新建备忘", kind: "new" }];
+  filteredItems.value.forEach((it) => {
+    options.push({ id: it.id, label: it.title, kind: "item" });
+  });
   historyVersions.value.forEach((v) => {
     options.push({
       id: v.id,
@@ -157,6 +163,11 @@ const versionOptions = computed<VersionOption[]>(() => {
 });
 
 const selectedVersionLabel = computed(() => {
+  // 未保存的新草稿（选中 id 为空），按钮显示“新建备忘”。
+  if (!selectedItemId.value) return "新建备忘";
+  // 当前正在编辑的条目，按钮上直接显示它的标题。
+  const selected = memoItems.value.find((it) => it.id === selectedItemId.value);
+  if (selected) return selected.title;
   if (selectedVersionId.value === "new" && historyVersions.value.length > 0) {
     return "版本管理";
   }
@@ -185,8 +196,36 @@ const syncLocalFromEditorIfRich = () => {
   }
 };
 
+// 正文去标签后的纯文本：富文本是 HTML，简单模式是纯文本，两种都按同一口径判空。
+const plainTextOf = (content: string) => {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = content;
+  return (tmp.textContent || tmp.innerText || "").trim();
+};
+
 const triggerSave = async () => {
   syncLocalFromEditorIfRich();
+  // 空内容或纯空白禁止入库，给一次简短提示，不写存储、不刷版本。
+  if (!plainTextOf(localData.value)) {
+    toastMessage.value = "内容为空，不能保存";
+    showToast.value = true;
+    setTimeout(() => { showToast.value = false; }, 3000);
+    return;
+  }
+  // 新增流程的入库点：点“新增”时只清空不入库，当前编辑内容是未保存的草稿，
+  // 点“保存”时才在这里建成一条新条目，再走原有保存流程。
+  if (!selectedItemId.value) {
+    const now = Date.now();
+    const item: MemoItem = {
+      id: `item-${now}-${Math.random().toString(36).slice(2, 6)}`,
+      title: deriveTitle(localData.value), content: localData.value,
+      mode: mode.value, created_at: now, updated_at: now,
+    };
+    memoItems.value = [...memoItems.value, item];
+    selectedItemId.value = item.id;
+    lastConfirmedContent = "";
+    lastConfirmedMode = mode.value;
+  }
   await saveVersionSnapshot(true);
   await saveToIndexedDB();
   await refreshVersions();
@@ -197,6 +236,8 @@ const triggerSave = async () => {
     setTimeout(() => (showToast.value = false), 3000);
   }
   await saveToServer(true);
+  // 保存成功后刷新版本管理下拉的数据源（清单条目与历史版本）。
+  await refreshVersions();
 };
 
 const toggleMode = () => {
@@ -410,6 +451,9 @@ const markSaveError = (message: string, allowRetry = true) => {
 
 const saveToServer = async (immediate = false, keepalive = false) => {
   if (!store.isLogged) return;
+  // 未保存的新草稿（选中 id 为空）不许被自动保存、失焦保存带上服务器：
+  // 那会把草稿内容当成旧条目的新内容存回去，清单就乱了。入库只走保存按钮。
+  if (!selectedItemId.value) return;
   // If conflict is active, block further auto-saves until resolved
   if (conflictState.value.hasConflict && !immediate) return;
   if (!immediate && Date.now() < conflictCooldownUntil.value) {
@@ -875,28 +919,45 @@ const refreshVersions = async () => {
 };
 
 // --- 清单操作 ---
-const addMemoItem = async () => {
-  const now = Date.now();
-  const item: MemoItem = {
-    id: `item-${now}-${Math.random().toString(36).slice(2, 6)}`,
-    title: "新备忘", content: "", mode: mode.value,
-    created_at: now, updated_at: now,
-  };
-  // 先把当前正在改的那条合并进清单，再切到新条，避免切过去丢了没存的改动。
-  if (selectedItemId.value && memoItems.value.length > 0) {
-    memoItems.value = itemsForSave();
+// 新增流程：清空 → 输入 → 保存入库。点“新增”只清空正文、清空选中 id，
+// 不建条目、不存服务器；编辑器获得焦点，等用户输入后点“保存”才入库。
+const focusEditor = async () => {
+  await nextTick();
+  if (mode.value === "rich") {
+    const root = (editorRef.value as unknown as { editorRef?: HTMLDivElement | null })?.editorRef;
+    root?.focus();
+  } else {
+    simpleEditorRef.value?.focus();
   }
-  memoItems.value = [...memoItems.value, item];
-  selectedItemId.value = item.id;
+};
+const addMemoItem = async () => {
+  // 已是未保存的新草稿时，再点新增就是重新清空一次，不另起草稿。
+  if (!selectedItemId.value) {
+    localData.value = "";
+    await focusEditor();
+    return;
+  }
+  // 先按原方案把当前条未存的改动存下，再切到空白草稿，避免切过去丢改动。
+  if (hasUnsyncedEdits()) {
+    memoItems.value = itemsForSave();
+    await saveToServer(true);
+  }
+  selectedItemId.value = "";
   suppressAutoSave = true;
   localData.value = "";
   lastConfirmedContent = "";
   setTimeout(() => { suppressAutoSave = false; }, 0);
-  saveToServer(true);
+  await focusEditor();
 };
 const selectMemoItem = async (id: string) => {
   if (id === selectedItemId.value) return;
-  if (selectedItemId.value && memoItems.value.length > 0 && hasUnsyncedEdits()) {
+  // 未保存的新草稿里切走：按原方案先存再切——有内容就先按保存按钮的口径入库，
+  // 只有空白草稿才直接丢弃，不新增复杂弹窗。
+  if (!selectedItemId.value && memoItems.value.length > 0) {
+    if (plainTextOf(localData.value)) {
+      await triggerSave();
+    }
+  } else if (selectedItemId.value && memoItems.value.length > 0 && hasUnsyncedEdits()) {
     memoItems.value = itemsForSave();
     await saveToServer(true);
   }
@@ -933,7 +994,8 @@ const deleteMemoItem = async (id: string) => {
 const openVersionMenu = async () => {
   versionMenuOpen.value = true;
   await nextTick();
-  const idx = versionOptions.value.findIndex((opt) => opt.id === selectedVersionId.value);
+  const activeId = selectedItemId.value || selectedVersionId.value;
+  const idx = versionOptions.value.findIndex((opt) => opt.id === activeId);
   activeVersionIndex.value = idx >= 0 ? idx : 0;
 };
 
@@ -967,6 +1029,9 @@ const selectVersionOption = async (option: VersionOption, index: number) => {
   if (option.kind === "new") {
     selectedVersionId.value = "new";
     await createNewMemo();
+  } else if (option.kind === "item") {
+    // 下拉选标题 → 加载该条正文到内容区，与搜索共用同一回调。
+    await selectMemoItem(option.id);
   } else if (option.version) {
     selectedVersionId.value = option.id;
     await applyVersion(option.version);
@@ -1267,16 +1332,23 @@ onUnmounted(() => {
 
         <div
           v-if="versionMenuOpen && !isMobile"
-          class="absolute right-0 top-full mt-1 z-40 w-[128px] max-h-[200px] overflow-y-auto no-scrollbar rounded-lg border border-white/20 bg-white/80 backdrop-blur shadow-lg p-1"
+          class="absolute right-0 top-full mt-1 z-40 w-[176px] max-h-[240px] overflow-y-auto no-scrollbar rounded-lg border border-white/20 bg-white/80 backdrop-blur shadow-lg p-1"
           @wheel="handleInnerWheel"
         >
+          <input
+            v-model="memoSearch"
+            class="w-full px-2 h-7 mb-1 rounded-md text-xs bg-white/60 border border-white/20 outline-none placeholder-gray-500"
+            placeholder="搜索标题…"
+            @click.stop
+            @keydown.stop
+          />
           <div
             v-for="(option, index) in versionOptions"
             :key="option.id"
             class="flex items-center gap-1 rounded-md transition-colors"
             :class="[
               activeVersionIndex === index ? 'bg-[#0052D9]/10 text-[#0052D9]' : 'text-gray-700 hover:bg-white/60',
-              selectedVersionId === option.id ? 'bg-[#0052D9]/20 text-[#0052D9]' : ''
+              selectedVersionId === option.id || selectedItemId === option.id ? 'bg-[#0052D9]/20 text-[#0052D9]' : ''
             ]"
           >
             <button
@@ -1285,6 +1357,21 @@ onUnmounted(() => {
               @click="selectVersionOption(option, index)"
             >
               {{ option.label }}
+            </button>
+            <button
+              v-if="option.kind === 'item'"
+              type="button"
+              class="shrink-0 p-1 rounded-md text-gray-400 hover:text-red-500 hover:bg-white/60"
+              aria-label="删除这条备忘"
+              @click.stop="deleteMemoItem(option.id)"
+            >
+              <svg class="w-3 h-3" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  fill-rule="evenodd"
+                  d="M6.28 5.22a.75.75 0 0 1 1.06 0L10 7.94l2.66-2.72a.75.75 0 1 1 1.08 1.04L11.06 9l2.68 2.76a.75.75 0 1 1-1.08 1.04L10 10.06l-2.66 2.72a.75.75 0 1 1-1.08-1.04L8.94 9 6.28 6.26a.75.75 0 0 1 0-1.04Z"
+                  clip-rule="evenodd"
+                />
+              </svg>
             </button>
             <button
               v-if="option.kind === 'history'"
@@ -1329,45 +1416,25 @@ onUnmounted(() => {
         </svg>
         <span>{{ status === 'success' ? '已保存' : '保存' }}</span>
       </button>
+      <button
+        type="button"
+        class="flex items-center justify-center px-2 h-7 rounded-md text-xs font-medium text-white bg-[#0052D9] hover:brightness-110 transition-all duration-300"
+        title="新增备忘"
+        @click="addMemoItem"
+      >
+        ＋新增
+      </button>
     </div>
 
-    <!-- 备忘清单：多条都能存，点一条就编辑那条，全端同步 -->
-    <div class="z-10 mb-2 -mt-1">
-      <div class="flex items-center gap-2">
-        <input
-          v-model="memoSearch"
-          class="flex-1 min-w-0 px-2 h-7 rounded-md text-xs bg-white/40 border border-white/20 outline-none placeholder-gray-500"
-          placeholder="搜索备忘…"
-        />
-        <button
-          type="button"
-          class="shrink-0 px-2 h-7 rounded-md text-xs font-medium text-white bg-[#0052D9] hover:brightness-110"
-          @click="addMemoItem"
-        >
-          ＋新增
-        </button>
-        <span class="shrink-0 text-[11px] text-gray-600">{{ memoItems.length }} 条</span>
-      </div>
-      <div v-if="filteredItems.length > 0" class="mt-1 max-h-[96px] overflow-y-auto no-scrollbar space-y-1 pr-1">
-        <div
-          v-for="item in filteredItems"
-          :key="item.id"
-          class="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs cursor-pointer transition-colors"
-          :class="item.id === selectedItemId ? 'bg-[#0052D9]/20 text-[#0052D9] font-medium' : 'text-gray-700 hover:bg-white/60'"
-          @click="selectMemoItem(item.id)"
-        >
-          <span class="flex-1 truncate">{{ item.title }}</span>
-          <button
-            type="button"
-            class="shrink-0 px-1 rounded text-gray-400 hover:text-red-500"
-            title="删除这条备忘"
-            @click.stop="deleteMemoItem(item.id)"
-          >
-            ×
-          </button>
-        </div>
-      </div>
-      <div v-else class="mt-1 text-[11px] text-gray-500 px-1">还没有备忘，点右上“＋新增”写第一条。</div>
+    <div v-if="mode === 'simple'" class="flex items-center justify-end z-10 mb-1">
+      <button
+        type="button"
+        class="px-2 h-7 rounded-md text-xs font-medium text-white bg-[#0052D9] hover:brightness-110"
+        title="新增备忘"
+        @click="addMemoItem"
+      >
+        ＋新增
+      </button>
     </div>
 
     <!-- Content Area -->
@@ -1376,6 +1443,7 @@ onUnmounted(() => {
         <div :key="mode" class="w-full h-full">
           <textarea
             v-if="mode === 'simple'"
+            ref="simpleEditorRef"
             v-model="localData"
             class="w-full h-full bg-transparent resize-none outline-none text-sm placeholder-gray-600 font-medium p-4 pt-4"
             :placeholder="store.isLogged ? '写点什么...' : '请先登录'"
@@ -1453,14 +1521,21 @@ onUnmounted(() => {
             关闭
           </button>
         </div>
-        <div class="flex-1 overflow-y-auto no-scrollbar p-3 space-y-1" @wheel="handleInnerWheel">
+        <div class="p-3 pb-1">
+          <input
+            v-model="memoSearch"
+            class="w-full px-3 h-9 rounded-md text-sm bg-gray-100 border border-gray-200 outline-none placeholder-gray-500"
+            placeholder="搜索标题…"
+          />
+        </div>
+        <div class="flex-1 overflow-y-auto no-scrollbar p-3 pt-1 space-y-1" @wheel="handleInnerWheel">
           <div
             v-for="(option, index) in versionOptions"
             :key="option.id"
             class="flex items-center gap-2 rounded-md transition-colors"
             :class="[
               activeVersionIndex === index ? 'bg-[#0052D9]/10 text-[#0052D9]' : 'text-gray-700 hover:bg-gray-100',
-              selectedVersionId === option.id ? 'bg-[#0052D9]/20 text-[#0052D9]' : ''
+              selectedVersionId === option.id || selectedItemId === option.id ? 'bg-[#0052D9]/20 text-[#0052D9]' : ''
             ]"
           >
             <button
@@ -1469,6 +1544,21 @@ onUnmounted(() => {
               @click="selectVersionOption(option, index)"
             >
               {{ option.label }}
+            </button>
+            <button
+              v-if="option.kind === 'item'"
+              type="button"
+              class="shrink-0 mr-2 p-1 rounded-md text-gray-400 hover:text-red-500 hover:bg-gray-100"
+              aria-label="删除这条备忘"
+              @click.stop="deleteMemoItem(option.id)"
+            >
+              <svg class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                <path
+                  fill-rule="evenodd"
+                  d="M6.28 5.22a.75.75 0 0 1 1.06 0L10 7.94l2.66-2.72a.75.75 0 1 1 1.08 1.04L11.06 9l2.68 2.76a.75.75 0 1 1-1.08 1.04L10 10.06l-2.66 2.72a.75.75 0 1 1-1.08-1.04L8.94 9 6.28 6.26a.75.75 0 0 1 0-1.04Z"
+                  clip-rule="evenodd"
+                />
+              </svg>
             </button>
             <button
               v-if="option.kind === 'history'"
