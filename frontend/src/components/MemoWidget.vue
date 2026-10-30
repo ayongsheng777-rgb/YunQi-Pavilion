@@ -131,6 +131,7 @@ const historyVersions = ref<MemoVersion[]>([]);
 const selectedVersionId = ref("new");
 const activeVersionIndex = ref(0);
 const versionWrapperRef = ref<HTMLDivElement | null>(null);
+const versionMenuRef = ref<HTMLDivElement | null>(null);
 const autoSaveDelay = computed(() => {
   if (!store.isLanModeInited || store.effectiveIsLan) return 800;
   return Math.max(900, CONFIG.TUNNEL_FORWARD_BASELINE_MS * 3);
@@ -1092,7 +1093,10 @@ const handleDocPointerDown = (e: PointerEvent) => {
   if (!versionMenuOpen.value) return;
   const target = e.target as Node | null;
   if (!target) return;
-  if (versionWrapperRef.value && !versionWrapperRef.value.contains(target)) {
+  // 下拉框已移到顶栏整行铺开，不在按钮的小容器里，点它里面不算点外面。
+  const insideWrapper = versionWrapperRef.value?.contains(target);
+  const insideMenu = versionMenuRef.value?.contains(target);
+  if (!insideWrapper && !insideMenu) {
     closeVersionMenu();
   }
 };
@@ -1302,7 +1306,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Header / Controls -->
-    <div v-if="mode === 'rich'" class="flex items-center justify-end gap-2 mb-2 z-10 -mt-4 -mr-4">
+    <div v-if="mode === 'rich'" class="relative flex items-center justify-end gap-2 mb-2 z-10 -mt-4 -mr-4">
       <div
         ref="versionWrapperRef"
         class="relative"
@@ -1329,12 +1333,18 @@ onUnmounted(() => {
             />
           </svg>
         </button>
+      </div>
 
-        <div
-          v-if="versionMenuOpen && !isMobile"
-          class="absolute right-0 top-full mt-1 z-40 w-[176px] max-h-[240px] overflow-y-auto no-scrollbar rounded-lg border border-white/20 bg-white/80 backdrop-blur shadow-lg p-1"
-          @wheel="handleInnerWheel"
-        >
+      <!-- 版本管理下拉：原来挂在 120 像素的按钮容器上、靠右对齐，组件一窄就往左超出边框被切掉。
+           现在改成顶栏整行铺开（左贴边、右贴边、居中显示），宽度跟着组件大小走。 -->
+      <div
+        v-if="versionMenuOpen && !isMobile"
+        ref="versionMenuRef"
+        class="absolute left-0 right-0 top-full mt-1 z-40 max-h-[240px] overflow-y-auto no-scrollbar rounded-lg border border-white/20 bg-white/80 backdrop-blur shadow-lg p-1"
+        tabindex="0"
+        @keydown="handleVersionKeydown"
+        @wheel="handleInnerWheel"
+      >
           <input
             v-model="memoSearch"
             class="w-full px-2 h-7 mb-1 rounded-md text-xs bg-white/60 border border-white/20 outline-none placeholder-gray-500"
@@ -1390,7 +1400,6 @@ onUnmounted(() => {
             </button>
           </div>
         </div>
-      </div>
 
       <!-- Persistent Save Button -->
       <!-- Triple Feedback 1: Button Pulse Animation -->
