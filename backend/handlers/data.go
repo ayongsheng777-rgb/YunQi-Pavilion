@@ -92,17 +92,42 @@ func loadSystemConfigFromDisk() models.SystemConfig {
 	return cfg
 }
 
+// 备忘清单：一个备忘录组件里存多条，每条独立，全部跟服务器同步。
+// 旧的单条格式（只有 content/mode）继续兼容：读到旧文件时自动把 content
+// 转成清单第一条，写回时 content/mode 仍同步成当前选中那条，旧客户端也不会坏。
+type MemoItem struct {
+	ID        string `json:"id"`
+	Title     string `json:"title,omitempty"`
+	Content   string `json:"content"`
+	Mode      string `json:"mode,omitempty"`
+	CreatedAt int64  `json:"created_at,omitempty"`
+	UpdatedAt int64  `json:"updated_at,omitempty"`
+}
+
+type MemoHistoryItem struct {
+	ID        string `json:"id"`
+	Content   string `json:"content"`
+	Mode      string `json:"mode,omitempty"`
+	UpdatedAt int64  `json:"updated_at,omitempty"`
+}
+
 type MemoFileData struct {
-	Content  string `json:"content"`
-	ServerTS int64  `json:"server_ts"`
-	Mode     string `json:"mode,omitempty"`
+	Content    string            `json:"content"`
+	ServerTS   int64             `json:"server_ts"`
+	Mode       string            `json:"mode,omitempty"`
+	Items      []MemoItem        `json:"items,omitempty"`
+	History    []MemoHistoryItem `json:"history,omitempty"`
+	SelectedID string            `json:"selected_id,omitempty"`
 }
 
 type SaveMemoPayload struct {
-	Content         string  `json:"content"`
-	ServerTS        *int64  `json:"server_ts"`
-	Mode            *string `json:"mode"`
-	ClientRequestID *string `json:"client_request_id,omitempty"`
+	Content         string            `json:"content"`
+	ServerTS        *int64            `json:"server_ts"`
+	Mode            *string           `json:"mode"`
+	Items           []MemoItem        `json:"items,omitempty"`
+	History         []MemoHistoryItem `json:"history,omitempty"`
+	SelectedID      string            `json:"selected_id,omitempty"`
+	ClientRequestID *string           `json:"client_request_id,omitempty"`
 }
 
 type memoSaveIdempotencyEntry struct {
@@ -760,6 +785,43 @@ func ensureMemoFile(userFile, memoFile, widgetID string, preloadedData interface
 				data.Mode = "simple"
 			}
 		}
+		// 旧单条文件自动转清单：content 就是清单第一条，不丢内容。
+		if len(data.Items) == 0 && data.Content != "" {
+			title := data.Content
+			// 去掉 HTML 标签再取第一行当标题
+			for strings.Contains(title, "<") {
+				start := strings.Index(title, "<")
+				end := strings.Index(title[start:], ">")
+				if end < 0 {
+					break
+				}
+				title = title[:start] + title[start+end+1:]
+			}
+			title = strings.TrimSpace(strings.Split(title, "\n")[0])
+			if len([]rune(title)) > 20 {
+				title = string([]rune(title)[:20])
+			}
+			data.Items = []MemoItem{{
+				ID: data.SelectedID, Content: data.Content, Mode: data.Mode,
+				CreatedAt: data.ServerTS, UpdatedAt: data.ServerTS, Title: title,
+			}}
+			if data.Items[0].ID == "" {
+				data.Items[0].ID = "item-legacy"
+			}
+			data.SelectedID = data.Items[0].ID
+		}
+		// 清单条目补默认值，避免前端拿到空 ID/空模式
+		for i := range data.Items {
+			if data.Items[i].ID == "" {
+				data.Items[i].ID = fmt.Sprintf("item-%d", i)
+			}
+			if data.Items[i].Mode != "simple" && data.Items[i].Mode != "rich" {
+				data.Items[i].Mode = data.Mode
+			}
+		}
+		if data.SelectedID == "" && len(data.Items) > 0 {
+			data.SelectedID = data.Items[0].ID
+		}
 		return data, nil
 	}
 	if _, err := os.Stat(memoFile); err == nil {
@@ -781,15 +843,18 @@ func ensureMemoFile(userFile, memoFile, widgetID string, preloadedData interface
 	if content != "" {
 		serverTS = time.Now().UnixMilli()
 	}
+	initialMode := "simple"
+	if strings.Contains(content, "<") && strings.Contains(content, ">") {
+		initialMode = "rich"
+	}
 	initial := MemoFileData{
 		Content:  content,
 		ServerTS: serverTS,
-		Mode: func() string {
-			if strings.Contains(content, "<") && strings.Contains(content, ">") {
-				return "rich"
-			}
-			return "simple"
-		}(),
+		Mode:     initialMode,
+	}
+	if content != "" {
+		initial.Items = []MemoItem{{ID: "item-legacy", Content: content, Mode: initialMode, CreatedAt: serverTS, UpdatedAt: serverTS}}
+		initial.SelectedID = "item-legacy"
 	}
 	if err := utils.WriteJSON(memoFile, initial); err != nil {
 		return MemoFileData{}, err
@@ -907,10 +972,48 @@ func SaveMemo(c *gin.Context) {
 			nextMode = "simple"
 		}
 	}
+	// 清单优先：客户端传了 items 就以 items 为准，content/mode 同步成选中条，
+	// 这样旧客户端读到的单条内容也不会是空的。
+	nextItems := payload.Items
+	if len(nextItems) == 0 && payload.Content != "" {
+		nextItems = []MemoItem{{ID: "item-legacy", Content: payload.Content, Mode: nextMode, CreatedAt: nextTS, UpdatedAt: nextTS}}
+	}
+	for i := range nextItems {
+		if nextItems[i].ID == "" {
+			nextItems[i].ID = fmt.Sprintf("item-%d", i)
+		}
+		if nextItems[i].Mode != "simple" && nextItems[i].Mode != "rich" {
+			nextItems[i].Mode = nextMode
+		}
+		if nextItems[i].UpdatedAt == 0 {
+			nextItems[i].UpdatedAt = nextTS
+		}
+	}
+	nextSelected := payload.SelectedID
+	if nextSelected == "" && len(nextItems) > 0 {
+		nextSelected = nextItems[0].ID
+	}
+	// 历史：客户端传了就用客户端的（上限 100 条，最新在前）；旧客户端没传时，
+	// 把被覆盖的旧内容追加一条，免得清单改版前的内容丢了还无处找。
+	nextHistory := payload.History
+	if nextHistory == nil && current.Content != "" && current.Content != payload.Content {
+		nextHistory = append([]MemoHistoryItem{{
+			ID: fmt.Sprintf("hist-%d", current.ServerTS), Content: current.Content,
+			Mode: current.Mode, UpdatedAt: current.ServerTS,
+		}}, current.History...)
+	} else if nextHistory == nil {
+		nextHistory = current.History
+	}
+	if len(nextHistory) > 100 {
+		nextHistory = nextHistory[:100]
+	}
 	next := MemoFileData{
-		Content:  payload.Content,
-		ServerTS: nextTS,
-		Mode:     nextMode,
+		Content:    payload.Content,
+		ServerTS:   nextTS,
+		Mode:       nextMode,
+		Items:      nextItems,
+		History:    nextHistory,
+		SelectedID: nextSelected,
 	}
 	if err := utils.WriteJSON(memoFile, next); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to save memo"})

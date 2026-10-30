@@ -59,6 +59,58 @@ let lastConfirmedMode: "simple" | "rich" = "simple";
 const hasUnsyncedEdits = () =>
   localData.value !== lastConfirmedContent || mode.value !== lastConfirmedMode;
 const lastInputAt = ref(0);
+
+// --- 备忘清单：一个组件存多条，每条独立，全部跟服务器同步 ---
+// 旧的单条内容会自动转成清单第一条，服务器历史也不再只存本机。
+type MemoItem = {
+  id: string;
+  title: string;
+  content: string;
+  mode: "simple" | "rich";
+  created_at: number;
+  updated_at: number;
+};
+type ServerHistoryItem = {
+  id: string;
+  content: string;
+  mode: "simple" | "rich";
+  updated_at: number;
+};
+const memoItems = ref<MemoItem[]>([]);
+const selectedItemId = ref("");
+const serverHistory = ref<ServerHistoryItem[]>([]);
+const memoSearch = ref("");
+const deriveTitle = (content: string) => {
+  const text = content.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  if (!text) return "空白备忘";
+  return text.length > 20 ? `${text.slice(0, 20)}…` : text;
+};
+const selectedItem = computed(() => memoItems.value.find((it) => it.id === selectedItemId.value));
+const filteredItems = computed(() => {
+  const q = memoSearch.value.trim();
+  if (!q) return memoItems.value;
+  return memoItems.value.filter((it) => {
+    const text = it.title + " " + it.content.replace(/<[^>]*>/g, " ");
+    return text.includes(q);
+  });
+});
+const itemsForSave = () => {
+  // 编辑器里正在改的那条，先合并回清单再存；没选中条时，编辑器内容自己成一条。
+  if (memoItems.value.length === 0) {
+    if (!localData.value) return [];
+    return [{
+      id: "item-legacy", title: deriveTitle(localData.value), content: localData.value,
+      mode: mode.value, created_at: Date.now(), updated_at: Date.now(),
+    }];
+  }
+  return memoItems.value.map((it) => {
+    if (it.id !== selectedItemId.value) return it;
+    return {
+      ...it, content: localData.value, mode: mode.value,
+      title: deriveTitle(localData.value), updated_at: Date.now(),
+    };
+  });
+};
 const isBroadcasting = ref(false);
 const isPageVisible = ref(document.visibilityState === "visible");
 
@@ -190,13 +242,41 @@ const parsePayload = (payload: unknown) => {
     }
   }
 
-  return { content, serverTs: nextServerTs, mode: nextMode };
+  let items: MemoItem[] = [];
+  let history: ServerHistoryItem[] = [];
+  let selectedId = "";
+  if (payload && typeof payload === "object") {
+    const data = payload as Record<string, unknown>;
+    if (Array.isArray(data.items)) {
+      items = (data.items as Record<string, unknown>[]).map((it, idx) => ({
+        id: typeof it.id === "string" && it.id ? it.id : `item-${idx}`,
+        title: typeof it.title === "string" ? it.title : "",
+        content: typeof it.content === "string" ? it.content : "",
+        mode: it.mode === "rich" ? "rich" as const : "simple" as const,
+        created_at: typeof it.created_at === "number" ? it.created_at : nextServerTs,
+        updated_at: typeof it.updated_at === "number" ? it.updated_at : nextServerTs,
+      })).map((it) => ({ ...it, title: it.title || deriveTitle(it.content) }));
+    }
+    if (Array.isArray(data.history)) {
+      history = (data.history as Record<string, unknown>[]).map((h, idx) => ({
+        id: typeof h.id === "string" && h.id ? h.id : `hist-${idx}`,
+        content: typeof h.content === "string" ? h.content : "",
+        mode: h.mode === "rich" ? "rich" as const : "simple" as const,
+        updated_at: typeof h.updated_at === "number" ? h.updated_at : 0,
+      })).filter((h) => h.content);
+    }
+    if (typeof data.selected_id === "string") selectedId = data.selected_id;
+  }
+  return { content, serverTs: nextServerTs, mode: nextMode, items, history, selectedId };
 };
 
 const buildPayload = () => ({
   content: localData.value,
   server_ts: serverTs.value,
   mode: mode.value,
+  items: itemsForSave(),
+  selected_id: selectedItemId.value,
+  history: serverHistory.value,
 });
 
 const buildConflictSignature = (content: string, serverTs: number, nextMode: string) =>
@@ -502,6 +582,27 @@ const applyRemotePayload = (payload: WidgetConfig["data"], force = false) => {
     }
     return;
   }
+  // 清单同步：远程有清单就以远程清单为准，选中条跟远程走；没有清单时，
+  // 旧单条内容转成一条，保证老数据不丢。
+  if (parsed.items.length > 0) {
+    memoItems.value = parsed.items;
+    const nextSelected = parsed.selectedId && parsed.items.some((it) => it.id === parsed.selectedId)
+      ? parsed.selectedId
+      : parsed.items[0].id;
+    selectedItemId.value = nextSelected;
+    const selected = parsed.items.find((it) => it.id === nextSelected)!;
+    suppressAutoSave = true;
+    localData.value = selected.content;
+    mode.value = selected.mode;
+    serverTs.value = parsed.serverTs;
+    lastConfirmedContent = selected.content;
+    lastConfirmedMode = selected.mode;
+    setTimeout(() => { suppressAutoSave = false; }, 0);
+  }
+  if (parsed.history.length > 0) {
+    serverHistory.value = parsed.history;
+    void refreshVersions();
+  }
   if (parsed.content !== localData.value || parsed.serverTs !== serverTs.value) {
     // 程序改值，不是用户打字：抑制这次变更触发的自动回存，
     // 否则收到的远程内容会被当成新改动再存回去。
@@ -762,7 +863,71 @@ const extractPreviewLabel = (value: string) => {
 };
 
 const refreshVersions = async () => {
+  // 服务器历史优先（全端同步）；服务器历史为空时，才退回本机历史。
+  if (serverHistory.value.length > 0) {
+    historyVersions.value = serverHistory.value.map((h) => ({
+      id: h.id, widgetId: props.widget.id, content: h.content,
+      mode: h.mode, updatedAt: h.updated_at, checksum: "",
+    }));
+    return;
+  }
   historyVersions.value = await loadVersions();
+};
+
+// --- 清单操作 ---
+const addMemoItem = async () => {
+  const now = Date.now();
+  const item: MemoItem = {
+    id: `item-${now}-${Math.random().toString(36).slice(2, 6)}`,
+    title: "新备忘", content: "", mode: mode.value,
+    created_at: now, updated_at: now,
+  };
+  // 先把当前正在改的那条合并进清单，再切到新条，避免切过去丢了没存的改动。
+  if (selectedItemId.value && memoItems.value.length > 0) {
+    memoItems.value = itemsForSave();
+  }
+  memoItems.value = [...memoItems.value, item];
+  selectedItemId.value = item.id;
+  suppressAutoSave = true;
+  localData.value = "";
+  lastConfirmedContent = "";
+  setTimeout(() => { suppressAutoSave = false; }, 0);
+  saveToServer(true);
+};
+const selectMemoItem = async (id: string) => {
+  if (id === selectedItemId.value) return;
+  if (selectedItemId.value && memoItems.value.length > 0 && hasUnsyncedEdits()) {
+    memoItems.value = itemsForSave();
+    await saveToServer(true);
+  }
+  const item = memoItems.value.find((it) => it.id === id);
+  if (!item) return;
+  selectedItemId.value = id;
+  suppressAutoSave = true;
+  localData.value = item.content;
+  mode.value = item.mode;
+  lastConfirmedContent = item.content;
+  lastConfirmedMode = item.mode;
+  setTimeout(() => { suppressAutoSave = false; }, 0);
+};
+const deleteMemoItem = async (id: string) => {
+  memoItems.value = memoItems.value.filter((it) => it.id !== id);
+  if (memoItems.value.length === 0) {
+    const now = Date.now();
+    memoItems.value = [{
+      id: `item-${now}`, title: "新备忘", content: "", mode: "rich",
+      created_at: now, updated_at: now,
+    }];
+  }
+  const next = memoItems.value[0];
+  selectedItemId.value = next.id;
+  suppressAutoSave = true;
+  localData.value = next.content;
+  mode.value = next.mode;
+  lastConfirmedContent = next.content;
+  lastConfirmedMode = next.mode;
+  setTimeout(() => { suppressAutoSave = false; }, 0);
+  saveToServer(true);
 };
 
 const openVersionMenu = async () => {
@@ -785,12 +950,12 @@ const toggleVersionMenu = () => {
 };
 
 const createNewMemo = async () => {
-  localData.value = "";
-  await saveToIndexedDB();
-  saveToServer(true);
+  // 清单里“新建备忘”就是新增一条，不是把当前这条清空。
+  await addMemoItem();
 };
 
 const applyVersion = async (version: MemoVersion) => {
+  // 历史版本恢复到当前选中条：改的是这条的内容，清单和服务器历史一起存回去。
   localData.value = version.content;
   mode.value = version.mode;
   await saveToIndexedDB();
@@ -812,7 +977,13 @@ const selectVersionOption = async (option: VersionOption, index: number) => {
 const deleteVersionEntry = async (option: VersionOption) => {
   if (option.kind !== "history") return;
   if (!option.version) return;
-  await deleteVersion(option.id);
+  if (serverHistory.value.some((h) => h.id === option.id)) {
+    // 服务器历史：从服务器清单里删掉并存回去，全端都看不到它。
+    serverHistory.value = serverHistory.value.filter((h) => h.id !== option.id);
+    saveToServer(true);
+  } else {
+    await deleteVersion(option.id);
+  }
   await refreshVersions();
   if (selectedVersionId.value === option.id) {
     selectedVersionId.value = "new";
@@ -885,6 +1056,16 @@ loadFromIndexedDB().then(async () => {
     if (serverSnapshot.mode === "simple" || serverSnapshot.mode === "rich") {
       lastConfirmedMode = serverSnapshot.mode;
     }
+    // 清单优先：服务器有清单就用它；只有旧单条时，才把单条转成第一条。
+    if (serverSnapshot.items.length > 0) {
+      memoItems.value = serverSnapshot.items;
+      selectedItemId.value = serverSnapshot.selectedId && serverSnapshot.items.some((it) => it.id === serverSnapshot.selectedId)
+        ? serverSnapshot.selectedId
+        : serverSnapshot.items[0].id;
+    }
+    if (serverSnapshot.history.length > 0) {
+      serverHistory.value = serverSnapshot.history;
+    }
   }
   if (!localData.value && props.widget.data) {
      if (typeof props.widget.data === "string") {
@@ -912,6 +1093,24 @@ loadFromIndexedDB().then(async () => {
   // auto-correct to "rich" so the contenteditable renders it instead of showing raw tags
   if (mode.value === "simple" && localData.value && /<[a-z][\s\S]*>/i.test(localData.value)) {
     mode.value = "rich";
+  }
+  // 清单兜底：服务器和本机都没有清单时，当前编辑器内容自己成第一条；
+  // 服务器清单存在时，编辑器跟选中条走，不在这里另起一条。
+  if (memoItems.value.length === 0 && localData.value) {
+    const now = Date.now();
+    memoItems.value = [{
+      id: "item-legacy", title: deriveTitle(localData.value), content: localData.value,
+      mode: mode.value, created_at: now, updated_at: now,
+    }];
+    selectedItemId.value = "item-legacy";
+  } else if (memoItems.value.length > 0) {
+    const selected = memoItems.value.find((it) => it.id === selectedItemId.value) || memoItems.value[0];
+    selectedItemId.value = selected.id;
+    // 打开时编辑器跟选中条一致（本机缓存若是旧条，会被轮询/远程更新纠正，不会直接回存）。
+    if (!localData.value) {
+      localData.value = selected.content;
+      mode.value = selected.mode;
+    }
   }
   await refreshVersions();
   // 加载完成，下一轮宏任务再解除抑制：加载引起的 watch 回调已先跑完并被记为抑制。
@@ -1130,6 +1329,45 @@ onUnmounted(() => {
         </svg>
         <span>{{ status === 'success' ? '已保存' : '保存' }}</span>
       </button>
+    </div>
+
+    <!-- 备忘清单：多条都能存，点一条就编辑那条，全端同步 -->
+    <div class="z-10 mb-2 -mt-1">
+      <div class="flex items-center gap-2">
+        <input
+          v-model="memoSearch"
+          class="flex-1 min-w-0 px-2 h-7 rounded-md text-xs bg-white/40 border border-white/20 outline-none placeholder-gray-500"
+          placeholder="搜索备忘…"
+        />
+        <button
+          type="button"
+          class="shrink-0 px-2 h-7 rounded-md text-xs font-medium text-white bg-[#0052D9] hover:brightness-110"
+          @click="addMemoItem"
+        >
+          ＋新增
+        </button>
+        <span class="shrink-0 text-[11px] text-gray-600">{{ memoItems.length }} 条</span>
+      </div>
+      <div v-if="filteredItems.length > 0" class="mt-1 max-h-[96px] overflow-y-auto no-scrollbar space-y-1 pr-1">
+        <div
+          v-for="item in filteredItems"
+          :key="item.id"
+          class="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs cursor-pointer transition-colors"
+          :class="item.id === selectedItemId ? 'bg-[#0052D9]/20 text-[#0052D9] font-medium' : 'text-gray-700 hover:bg-white/60'"
+          @click="selectMemoItem(item.id)"
+        >
+          <span class="flex-1 truncate">{{ item.title }}</span>
+          <button
+            type="button"
+            class="shrink-0 px-1 rounded text-gray-400 hover:text-red-500"
+            title="删除这条备忘"
+            @click.stop="deleteMemoItem(item.id)"
+          >
+            ×
+          </button>
+        </div>
+      </div>
+      <div v-else class="mt-1 text-[11px] text-gray-500 px-1">还没有备忘，点右上“＋新增”写第一条。</div>
     </div>
 
     <!-- Content Area -->
