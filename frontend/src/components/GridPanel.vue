@@ -88,8 +88,8 @@ const SizeSelector = loadAsync(() => import("./SizeSelector.vue"));
 const store = useMainStore();
 const { apiUpdateError, resetError, rotate, pullApiWallpaper } = useWallpaperRotation();
 
-// 🛸 壁纸拉杆（右上角）：拉杆换壁纸——填了 API 接口优先从 API 拉图，没有（或拉失败）才用本地库轮换；
-// 上面的小开关：把 API 接口的壁纸存一份进 PC 壁纸库（不换当前壁纸）。
+// 🛸 壁纸存/换图标（右上角，跟在线图标同一排）：换=换一张壁纸，填了 API 接口优先从 API 拉图，没有（或拉失败）才用本地库轮换；
+// 存=把 API 接口的壁纸存一份进 PC 壁纸库（不换当前壁纸）。
 const leverPulled = ref(false);
 const leverBusy = ref(false);
 const leverHint = ref("");
@@ -3002,66 +3002,11 @@ onUnmounted(() => {
       </div>
     </Transition>
 
-    <!-- 🛸 壁纸拉杆（右上角在线图标下方，仅登录后可见）：玻璃青蓝风，照用户参考图 -->
-    <div v-if="store.isLogged" class="fixed right-3 top-[74px] z-40 flex flex-col items-center select-none">
-      <!-- 存PC库按钮 -->
-      <button
-        @click="saveApiWallpaper"
-        title="把API接口的壁纸存入PC壁纸库"
-        class="px-2.5 py-1.5 rounded-[12px] text-white text-[12px] font-bold cursor-pointer transition-all duration-300 hover:brightness-110 active:scale-95"
-        :style="{
-          background: 'linear-gradient(160deg, #38bdf8 0%, #22d3ee 45%, #5eead4 100%)',
-          border: '1.5px solid rgba(255,255,255,0.65)',
-          textShadow: '0 1px 3px rgba(8,145,178,0.55)',
-          boxShadow: saveSwitchOn
-            ? '0 0 0 4px rgba(56,189,248,0.45), 0 8px 22px rgba(34,211,238,0.65), inset 0 1px 3px rgba(255,255,255,0.8)'
-            : '0 0 0 3px rgba(56,189,248,0.30), 0 6px 16px rgba(34,211,238,0.40), inset 0 1px 3px rgba(255,255,255,0.75)',
-        }"
-      >存PC库</button>
-      <!-- 拉绳轨道（点轨道或下面按钮都是拉杆换壁纸）：宽 40px，跟右上角在线图标（40px）同宽 -->
-      <button
-        @click="pullWallpaperLever"
-        title="拉一下换壁纸（填了API就优先用API的图）"
-        class="relative mt-2 block w-10 h-[102px] rounded-full cursor-pointer transition-all duration-300 hover:brightness-105 active:scale-[0.98]"
-        :style="{
-          background: 'linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(207,250,254,0.35) 60%, rgba(165,243,252,0.30) 100%)',
-          border: '1.5px solid rgba(165,243,252,0.85)',
-          boxShadow: 'inset 0 2px 8px rgba(255,255,255,0.85), inset 0 -8px 14px rgba(103,232,249,0.35), 0 4px 14px rgba(34,211,238,0.25)',
-        }"
-      >
-        <!-- 金色拉绳 -->
-        <span
-          class="absolute left-1/2 -ml-[2px] top-[7px] w-[4px] rounded-full transition-all duration-300"
-          :style="{
-            height: `${leverPulled ? 64 : 43}px`,
-            background: 'repeating-linear-gradient(45deg, #f59e0b 0px, #f59e0b 3px, #fef3c7 3px, #fef3c7 6px)',
-          }"
-        ></span>
-        <!-- 吊坠 -->
-        <span
-          class="absolute left-1/2 -ml-[7px] flex flex-col items-center transition-transform duration-300"
-          :style="{ top: '47px', transform: `translateY(${leverPulled ? 21 : 0}px)` }"
-        >
-          <span class="block w-3 h-3 rounded-full border border-white/70 shadow" :style="{ background: 'radial-gradient(circle at 35% 30%, #99f6e4, #14b8a6 65%, #0f766e)' }"></span>
-          <span class="block w-3.5 h-[22px] -mt-[3px] border border-white/60 shadow" :style="{ background: 'linear-gradient(180deg, #5eead4 0%, #fcd34d 42%, #fb923c 78%, #38bdf8 100%)', borderRadius: '46% 46% 50% 50% / 26% 26% 62% 62%' }"></span>
-        </span>
-        <!-- 下拉小箭头 -->
-        <span class="absolute right-[4px] top-[62%] text-[10px] font-bold pointer-events-none" :style="{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(14,116,144,0.6)' }">↓</span>
-      </button>
-      <!-- 换壁纸按钮 -->
-      <button
-        @click="pullWallpaperLever"
-        title="拉一下换壁纸（填了API就优先用API的图）"
-        class="mt-2 px-2.5 py-1.5 rounded-full text-white text-[12px] font-bold cursor-pointer transition-all duration-300 hover:brightness-110 active:scale-95"
-        :style="{
-          background: 'linear-gradient(90deg, #67e8f9 0%, #7dd3fc 35%, #fdba74 100%)',
-          border: '1.5px solid rgba(255,255,255,0.65)',
-          textShadow: '0 1px 3px rgba(154,52,18,0.35)',
-          boxShadow: '0 5px 14px rgba(251,146,60,0.35), inset 0 1px 3px rgba(255,255,255,0.75)',
-        }"
-      >换壁纸</button>
-      <span v-if="leverHint" class="mt-1.5 text-[10px] text-amber-200 bg-black/60 rounded-full px-2 py-0.5 whitespace-nowrap">{{ leverHint }}</span>
-    </div>
+    <!-- 壁纸提示（存/换操作后的短暂反馈，2.2 秒后自动消失） -->
+    <div
+      v-if="leverHint"
+      class="fixed right-3 top-[74px] z-40 text-[10px] text-amber-200 bg-black/60 rounded-full px-2 py-0.5 whitespace-nowrap select-none"
+    >{{ leverHint }}</div>
 
     <!-- ✨ Global Background Layer -->
     <div class="fixed inset-0 z-0 pointer-events-none select-none">
@@ -3347,6 +3292,25 @@ onUnmounted(() => {
               key="mini-player-static"
               class="mr-auto xl:mr-0 pointer-events-auto"
             />
+            <!-- 壁纸存/换图标（跟右上角在线图标同一排、同配色）：存=把API壁纸存入PC库，换=换一张壁纸 -->
+            <button
+              v-if="store.isLogged"
+              @click="saveApiWallpaper"
+              title="把API接口的壁纸存入PC壁纸库"
+              class="pointer-events-auto rounded-full text-white flex items-center justify-center backdrop-blur transition-all w-8 h-8 xl:w-10 xl:h-10 bg-transparent xl:bg-white/20 xl:hover:bg-white/40 border-0 xl:border xl:border-white/20 shadow-none xl:shadow-sm"
+              :class="{ 'ring-2 ring-cyan-300': saveSwitchOn }"
+            >
+              <span class="text-sm xl:text-base font-bold leading-none">存</span>
+            </button>
+            <button
+              v-if="store.isLogged"
+              @click="pullWallpaperLever"
+              title="换一张壁纸（填了API就优先用API的图）"
+              class="pointer-events-auto rounded-full text-white flex items-center justify-center backdrop-blur transition-all w-8 h-8 xl:w-10 xl:h-10 bg-transparent xl:bg-white/20 xl:hover:bg-white/40 border-0 xl:border xl:border-white/20 shadow-none xl:shadow-sm"
+              :class="{ 'brightness-125 scale-95': leverPulled }"
+            >
+              <span class="text-sm xl:text-base font-bold leading-none">换</span>
+            </button>
             <button
               @click="openSettings"
               class="hidden xl:flex pointer-events-auto rounded-full text-white items-center justify-center backdrop-blur transition-all w-8 h-8 xl:w-10 xl:h-10 bg-transparent xl:bg-white/20 xl:hover:bg-white/40 border-0 xl:border xl:border-white/20 shadow-none xl:shadow-sm"
