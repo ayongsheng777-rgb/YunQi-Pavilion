@@ -385,6 +385,11 @@ func buildRssAttempts(feedUrl string) []rssAttempt {
 		{client: &http.Client{Timeout: 10 * time.Second}, headers: headersB},
 	}
 	proxyURL, err := getProxyURL()
+	// 环境变量没设时，再读配置文件里的代理地址兜底（跟壁纸代理同一来源）；
+	// 否则 OESP 上 RSS 只有直连，国内站直连不通就全失败（2026-10-31 实测）。
+	if err == nil && proxyURL == nil {
+		proxyURL, _ = fileProxyURL()
+	}
 	if err == nil && proxyURL != nil {
 		if proxyClient, err := buildProxyClient(); err == nil {
 			attempts = append(attempts, rssAttempt{client: proxyClient, headers: headersB})
