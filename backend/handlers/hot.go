@@ -22,10 +22,14 @@ type HotItem struct {
 }
 
 var hotTTLs = map[string]time.Duration{
-	"weibo":    3 * time.Minute,
-	"news":     8 * time.Minute,
-	"zhihu":    5 * time.Minute,
-	"bilibili": 4 * time.Minute,
+	"weibo":      3 * time.Minute,
+	"news":       8 * time.Minute,
+	"zhihu":      5 * time.Minute,
+	"bilibili":   4 * time.Minute,
+	"ithome":     8 * time.Minute,
+	"solidot":    8 * time.Minute,
+	"hackernews": 8 * time.Minute,
+	"ruanyifeng": 8 * time.Minute,
 }
 
 func BindHotHandlers(server *socketio.Server) {
@@ -40,7 +44,7 @@ func BindHotHandlers(server *socketio.Server) {
 		t, _ := payload["type"].(string)
 		force, _ := payload["force"].(bool)
 		switch t {
-		case "weibo", "news", "zhihu", "bilibili":
+		case "weibo", "news", "zhihu", "bilibili", "ithome", "solidot", "hackernews", "ruanyifeng":
 			cacheKey := buildHotCacheKey(t)
 			var cached []HotItem
 			hasCache, isFresh, _, err := sharedWidgetCache.Get(widgetCacheKindHot, cacheKey, &cached)
@@ -90,6 +94,14 @@ func refreshHotData(t string) ([]HotItem, error) {
 		items, err = fetchWeibo()
 	case "news":
 		items, err = fetchChinaNews()
+	case "ithome":
+		items, err = fetchRssAsHot("https://www.ithome.com/rss/")
+	case "solidot":
+		items, err = fetchRssAsHot("http://feeds.feedburner.com/solidot")
+	case "hackernews":
+		items, err = fetchRssAsHot("https://hnrss.org/frontpage")
+	case "ruanyifeng":
+		items, err = fetchRssAsHot("http://www.ruanyifeng.com/blog/atom.xml")
 	}
 
 	if err == nil && len(items) > 0 {
@@ -419,8 +431,23 @@ func fetchWeibo() ([]HotItem, error) {
 	return items, nil
 }
 
-func fetchChinaNews() ([]HotItem, error) {
-	type rssItem struct {
+// fetchRssAsHot 把一个 RSS 源拉下来转成热榜条目（复用 RSS 抓取的代理兜底）。
+func fetchRssAsHot(feedURL string) ([]HotItem, error) {
+	rssItems, err := fetchRssFeed(feedURL)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]HotItem, 0, len(rssItems))
+	for _, it := range rssItems {
+		if strings.TrimSpace(it.Title) == "" {
+			continue
+		}
+		items = append(items, HotItem{Title: it.Title, Url: it.Link})
+	}
+	return items, nil
+}
+
+func fetchChinaNews() ([]HotItem, error) {	type rssItem struct {
 		Title string `xml:"title"`
 		Link  string `xml:"link"`
 	}

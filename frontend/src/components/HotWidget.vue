@@ -13,7 +13,7 @@ interface HotItem {
 }
 
 interface TabConfig {
-  id: "weibo" | "news" | "bilibili";
+  id: "weibo" | "news" | "bilibili" | "ithome" | "solidot" | "hackernews" | "ruanyifeng";
   label: string;
   icon: string;
   activeClass: string;
@@ -46,6 +46,38 @@ const tabs = ref<TabConfig[]>([
     barClass: "bg-white/60",
     indexClass: "text-white bg-white/15",
   },
+  {
+    id: "ithome",
+    label: "IT之家",
+    icon: "📰",
+    activeClass: "text-white bg-white/15",
+    barClass: "bg-white/60",
+    indexClass: "text-white bg-white/15",
+  },
+  {
+    id: "solidot",
+    label: "Solidot",
+    icon: "💻",
+    activeClass: "text-white bg-white/15",
+    barClass: "bg-white/60",
+    indexClass: "text-white bg-white/15",
+  },
+  {
+    id: "hackernews",
+    label: "HN",
+    icon: "🟠",
+    activeClass: "text-white bg-white/15",
+    barClass: "bg-white/60",
+    indexClass: "text-white bg-white/15",
+  },
+  {
+    id: "ruanyifeng",
+    label: "阮一峰",
+    icon: "📝",
+    activeClass: "text-white bg-white/15",
+    barClass: "bg-white/60",
+    indexClass: "text-white bg-white/15",
+  },
 ]);
 
 // 缓存不同 Tab 的数据，避免来回切换时重复请求
@@ -53,7 +85,7 @@ const cache = ref<Record<string, { data: HotItem[]; ts: number }>>({});
 const CACHE_TTL = 60 * 1000; // 仅做短时前端缓存，实际新鲜度交给后端缓存
 const HOT_POLL_INTERVAL_MS = 5 * 60 * 1000;
 
-const activeTab = ref<"weibo" | "news" | "bilibili">("weibo");
+const activeTab = ref<"weibo" | "news" | "bilibili" | "ithome" | "solidot" | "hackernews" | "ruanyifeng">("weibo");
 const list = ref<HotItem[]>([]);
 const loading = ref(false);
 const HOT_FETCH_TIMEOUT_MS = 8000;
@@ -62,7 +94,7 @@ let activeController: AbortController | null = null;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 
 // 获取数据 (带缓存优化)
-const fetchHot = async (type: "weibo" | "news" | "bilibili", force = false) => {
+const fetchHot = async (type: "weibo" | "news" | "bilibili" | "ithome" | "solidot" | "hackernews" | "ruanyifeng", force = false) => {
   activeController?.abort();
   activeController = null;
   activeTab.value = type;
