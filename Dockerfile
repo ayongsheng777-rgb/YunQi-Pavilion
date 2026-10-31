@@ -34,7 +34,7 @@ RUN npm run build-only
 # Stage 2: Build Backend
 # 注：用 golang:1.23-bookworm（NAS 本地已缓存）；go.mod 要求 go1.25.5 时
 # Go 工具链会自动经 GOPROXY 下载对应版本（已配 goproxy.cn）
-FROM --platform=$BUILDPLATFORM golang:1.23-bookworm AS backend-builder
+FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS backend-builder
 
 # 接收构建参数
 ARG HTTP_PROXY
