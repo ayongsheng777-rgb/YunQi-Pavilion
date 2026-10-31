@@ -74,6 +74,13 @@ func loadMusicConfig() MusicConfig {
 		if saved.ProxyPort > 0 {
 			cfg.ProxyPort = saved.ProxyPort
 		}
+		// 代理账号密码也要读回来：下载走代理时靠它认证，漏读会导致 407（2026-10-31 实测）
+		if saved.ProxyUser != "" {
+			cfg.ProxyUser = saved.ProxyUser
+		}
+		if saved.ProxyPass != "" {
+			cfg.ProxyPass = saved.ProxyPass
+		}
 		if saved.DownloadDir != "" {
 			cfg.DownloadDir = saved.DownloadDir
 		}
@@ -643,4 +650,57 @@ func MusicDownloadTasks(c *gin.Context) {
 		}
 	}
 	c.JSON(http.StatusOK, gin.H{"tasks": list})
+}
+
+// DELETE /api/music/download/tasks/:id — 删除一条下载记录；失败任务同时删掉未下完的残文件
+func MusicDownloadTaskDelete(c *gin.Context) {
+	id := c.Param("id")
+	downloadMu.Lock()
+	t, ok := downloadTasks[id]
+	if ok {
+		delete(downloadTasks, id)
+		for i, oid := range downloadOrder {
+			if oid == id {
+				downloadOrder = append(downloadOrder[:i], downloadOrder[i+1:]...)
+				break
+			}
+		}
+	}
+	downloadMu.Unlock()
+	if !ok {
+		c.JSON(http.StatusNotFound, gin.H{"error": "任务不存在"})
+		return
+	}
+	if t.Status == "failed" && t.File != "" {
+		cfg := loadMusicConfig()
+		_ = os.Remove(filepath.Join(resolveDownloadDir(cfg), t.File))
+	}
+	c.JSON(http.StatusOK, gin.H{"success": true})
+}
+
+// DELETE /api/music/download/tasks?status=failed — 清空所有失败的下载记录（含残文件）
+func MusicDownloadTasksClearFailed(c *gin.Context) {
+	if c.Query("status") != "failed" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "只支持 status=failed"})
+		return
+	}
+	cfg := loadMusicConfig()
+	dir := resolveDownloadDir(cfg)
+	downloadMu.Lock()
+	removed := 0
+	kept := downloadOrder[:0]
+	for _, id := range downloadOrder {
+		if t, ok := downloadTasks[id]; ok && t.Status == "failed" {
+			if t.File != "" {
+				_ = os.Remove(filepath.Join(dir, t.File))
+			}
+			delete(downloadTasks, id)
+			removed++
+		} else {
+			kept = append(kept, id)
+		}
+	}
+	downloadOrder = kept
+	downloadMu.Unlock()
+	c.JSON(http.StatusOK, gin.H{"success": true, "removed": removed})
 }

@@ -244,3 +244,14 @@ export async function fetchDownloadTasks(): Promise<DownloadTask[]> {
   const r = await api<{ tasks: DownloadTask[] }>("/api/music/download/tasks");
   return Array.isArray(r.tasks) ? r.tasks : [];
 }
+
+export async function deleteDownloadTask(id: string): Promise<void> {
+  await api(`/api/music/download/tasks/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+export async function clearFailedDownloadTasks(): Promise<number> {
+  const r = await api<{ removed: number }>("/api/music/download/tasks?status=failed", {
+    method: "DELETE",
+  });
+  return r.removed || 0;
+}

@@ -451,6 +451,8 @@ func main() {
 		music.GET("/hot-search", yunqi.MusicProxyEngine("/api/hot-search"))
 		music.POST("/download", yunqi.MusicDownload)
 		music.GET("/download/tasks", yunqi.MusicDownloadTasks)
+		music.DELETE("/download/tasks/:id", yunqi.MusicDownloadTaskDelete)
+		music.DELETE("/download/tasks", yunqi.MusicDownloadTasksClearFailed)
 		music.GET("/playlist", yunqi.MusicPlaylist)
 		music.GET("/playlist/lyric", yunqi.MusicPlaylistLyric)
 		music.POST("/playlist/delete", yunqi.MusicPlaylistDelete)

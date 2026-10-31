@@ -1,10 +1,12 @@
 <script setup lang="ts">
-import { ref, onUnmounted, watch } from "vue";
+import { ref, computed, onUnmounted, watch } from "vue";
 import { useMusicPlayer } from "@/stores/musicPlayer";
 import {
   QUALITIES,
   searchAllSources,
   deletePlaylistItem,
+  deleteDownloadTask,
+  clearFailedDownloadTasks,
   type MusicInfo,
   type PlaylistItem,
 } from "@/utils/music";
@@ -78,6 +80,28 @@ const taskPct = (t: { total: number; progress: number; status: string }) =>
     : t.status === "done"
       ? 100
       : 0;
+
+// 失败的下载记录：可以逐条删，也可以一键清空（后端会顺带删掉未下完的残文件）
+const failedTasks = computed(() => downloadTasks.value.filter((t) => t.status === "failed"));
+
+const onDeleteTask = async (id: string) => {
+  try {
+    await deleteDownloadTask(id);
+    void player.refreshTasks();
+  } catch (e) {
+    player.showNotice("删除失败：" + (e as Error).message);
+  }
+};
+
+const onClearFailed = async () => {
+  try {
+    const n = await clearFailedDownloadTasks();
+    player.showNotice(n > 0 ? `已清理 ${n} 条失败记录` : "没有失败记录");
+    void player.refreshTasks();
+  } catch (e) {
+    player.showNotice("清理失败：" + (e as Error).message);
+  }
+};
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 watch(panelOpen, (open) => {
@@ -286,6 +310,12 @@ const onPlay = (info: MusicInfo) => {
               </div>
             </div>
             <span class="text-xs text-white/60">{{ taskPct(t) }}%</span>
+            <button
+              v-if="t.status === 'failed'"
+              @click="onDeleteTask(t.id)"
+              title="删除这条失败记录"
+              class="shrink-0 w-6 h-6 rounded-full bg-white/10 text-white/70 hover:bg-red-500 hover:text-white flex items-center justify-center text-sm leading-none"
+            >×</button>
           </div>
           <div class="h-1.5 rounded-full bg-white/10 mt-1">
             <div
@@ -295,12 +325,21 @@ const onPlay = (info: MusicInfo) => {
             ></div>
           </div>
         </div>
-        <button
-          @click="player.refreshTasks"
-          class="mt-2 py-2 text-xs text-white/60 hover:text-white"
-        >
-          刷新
-        </button>
+        <div class="flex gap-2 mt-2">
+          <button
+            v-if="failedTasks.length"
+            @click="onClearFailed"
+            class="flex-1 py-2 text-xs text-red-300 hover:text-red-200 border border-red-400/30 rounded-lg"
+          >
+            清理失败（{{ failedTasks.length }} 条）
+          </button>
+          <button
+            @click="player.refreshTasks"
+            class="flex-1 py-2 text-xs text-white/60 hover:text-white"
+          >
+            刷新
+          </button>
+        </div>
       </div>
     </div>
   </div>
