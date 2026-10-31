@@ -3008,7 +3008,7 @@ onUnmounted(() => {
       <button
         @click="saveApiWallpaper"
         title="把API接口的壁纸存入PC壁纸库"
-        class="px-3.5 py-2 rounded-[14px] text-white text-[13px] font-bold cursor-pointer transition-all duration-300 hover:brightness-110 active:scale-95"
+        class="px-2.5 py-1.5 rounded-[12px] text-white text-[12px] font-bold cursor-pointer transition-all duration-300 hover:brightness-110 active:scale-95"
         :style="{
           background: 'linear-gradient(160deg, #38bdf8 0%, #22d3ee 45%, #5eead4 100%)',
           border: '1.5px solid rgba(255,255,255,0.65)',
@@ -3018,11 +3018,11 @@ onUnmounted(() => {
             : '0 0 0 3px rgba(56,189,248,0.30), 0 6px 16px rgba(34,211,238,0.40), inset 0 1px 3px rgba(255,255,255,0.75)',
         }"
       >存PC库</button>
-      <!-- 拉绳轨道（点轨道或下面按钮都是拉杆换壁纸） -->
+      <!-- 拉绳轨道（点轨道或下面按钮都是拉杆换壁纸）：宽 40px，跟右上角在线图标（40px）同宽 -->
       <button
         @click="pullWallpaperLever"
         title="拉一下换壁纸（填了API就优先用API的图）"
-        class="relative mt-2 block w-[46px] h-[118px] rounded-full cursor-pointer transition-all duration-300 hover:brightness-105 active:scale-[0.98]"
+        class="relative mt-2 block w-10 h-[102px] rounded-full cursor-pointer transition-all duration-300 hover:brightness-105 active:scale-[0.98]"
         :style="{
           background: 'linear-gradient(180deg, rgba(255,255,255,0.55) 0%, rgba(207,250,254,0.35) 60%, rgba(165,243,252,0.30) 100%)',
           border: '1.5px solid rgba(165,243,252,0.85)',
@@ -3031,28 +3031,28 @@ onUnmounted(() => {
       >
         <!-- 金色拉绳 -->
         <span
-          class="absolute left-1/2 -ml-[2.5px] top-[8px] w-[5px] rounded-full transition-all duration-300"
+          class="absolute left-1/2 -ml-[2px] top-[7px] w-[4px] rounded-full transition-all duration-300"
           :style="{
-            height: `${leverPulled ? 74 : 50}px`,
+            height: `${leverPulled ? 64 : 43}px`,
             background: 'repeating-linear-gradient(45deg, #f59e0b 0px, #f59e0b 3px, #fef3c7 3px, #fef3c7 6px)',
           }"
         ></span>
         <!-- 吊坠 -->
         <span
-          class="absolute left-1/2 -ml-[8px] flex flex-col items-center transition-transform duration-300"
-          :style="{ top: '54px', transform: `translateY(${leverPulled ? 24 : 0}px)` }"
+          class="absolute left-1/2 -ml-[7px] flex flex-col items-center transition-transform duration-300"
+          :style="{ top: '47px', transform: `translateY(${leverPulled ? 21 : 0}px)` }"
         >
-          <span class="block w-3.5 h-3.5 rounded-full border border-white/70 shadow" :style="{ background: 'radial-gradient(circle at 35% 30%, #99f6e4, #14b8a6 65%, #0f766e)' }"></span>
-          <span class="block w-4 h-[26px] -mt-[3px] border border-white/60 shadow" :style="{ background: 'linear-gradient(180deg, #5eead4 0%, #fcd34d 42%, #fb923c 78%, #38bdf8 100%)', borderRadius: '46% 46% 50% 50% / 26% 26% 62% 62%' }"></span>
+          <span class="block w-3 h-3 rounded-full border border-white/70 shadow" :style="{ background: 'radial-gradient(circle at 35% 30%, #99f6e4, #14b8a6 65%, #0f766e)' }"></span>
+          <span class="block w-3.5 h-[22px] -mt-[3px] border border-white/60 shadow" :style="{ background: 'linear-gradient(180deg, #5eead4 0%, #fcd34d 42%, #fb923c 78%, #38bdf8 100%)', borderRadius: '46% 46% 50% 50% / 26% 26% 62% 62%' }"></span>
         </span>
         <!-- 下拉小箭头 -->
-        <span class="absolute right-[5px] top-[62%] text-[11px] font-bold pointer-events-none" :style="{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(14,116,144,0.6)' }">↓</span>
+        <span class="absolute right-[4px] top-[62%] text-[10px] font-bold pointer-events-none" :style="{ color: 'rgba(255,255,255,0.85)', textShadow: '0 1px 3px rgba(14,116,144,0.6)' }">↓</span>
       </button>
       <!-- 换壁纸按钮 -->
       <button
         @click="pullWallpaperLever"
         title="拉一下换壁纸（填了API就优先用API的图）"
-        class="mt-2 px-3.5 py-1.5 rounded-full text-white text-[13px] font-bold cursor-pointer transition-all duration-300 hover:brightness-110 active:scale-95"
+        class="mt-2 px-2.5 py-1.5 rounded-full text-white text-[12px] font-bold cursor-pointer transition-all duration-300 hover:brightness-110 active:scale-95"
         :style="{
           background: 'linear-gradient(90deg, #67e8f9 0%, #7dd3fc 35%, #fdba74 100%)',
           border: '1.5px solid rgba(255,255,255,0.65)',
